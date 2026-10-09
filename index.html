@@ -16,7 +16,7 @@ body {
   overflow-wrap: anywhere;
 }
 
-input, textarea, button {
+input, button {
   width: 100%;
   margin: 6px 0 12px;
   padding: 12px;
@@ -105,7 +105,9 @@ function cleanText(text) {
 }
 
 function extractContent(doc) {
+  // Shanghai Fantasy 的实际正文容器是 .contenta
   const selectors = [
+    ".contenta",
     ".entry-content",
     ".wp-block-post-content",
     ".post-content",
@@ -144,6 +146,7 @@ function extractContent(doc) {
     }
   }
 
+  // 优先选取内容最长的候选区域
   candidates.sort((a, b) => b.length - a.length);
 
   if (candidates.length) {
@@ -220,6 +223,7 @@ $("fetchBtn").addEventListener("click", async () => {
   diagnosticText = "";
 
   try {
+    // 使用已测试成功的公共 CORS 代理
     const proxyUrl =
       "https://corsproxy.nl/" +
       target.href.replace(/^https?:\/\//i, "");
