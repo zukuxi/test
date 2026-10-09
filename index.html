@@ -5,107 +5,205 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>小说章节抓取测试</title>
 <style>
+* { box-sizing: border-box; }
+
 body {
   font-family: system-ui, sans-serif;
-  max-width: 760px;
+  max-width: 800px;
   margin: auto;
-  padding: 18px;
+  padding: 16px;
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
+
 input, textarea, button {
-  box-sizing: border-box;
   width: 100%;
   margin: 6px 0 12px;
   padding: 12px;
   font-size: 16px;
 }
+
 button { cursor: pointer; }
-#status { white-space: pre-wrap; }
+
+button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+#status {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 #preview {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   border: 1px solid #ccc;
+  border-radius: 8px;
   padding: 12px;
   min-height: 120px;
+  max-height: 65vh;
+  overflow: auto;
+}
+
+.small {
+  color: #666;
+  font-size: 13px;
 }
 </style>
 </head>
+
 <body>
 <h2>小说章节抓取测试</h2>
 
+<p class="small">
+输入公开可访问的小说章节网址，测试代理抓取和正文提取。
+</p>
+
 <label for="url">章节网址</label>
-<input id="url" type="url"
+<input
+  id="url"
+  type="url"
   value="https://shanghaifantasy.com/my-blind-date-was-snatched-away-my-arch-rivals-brother-calls-me-baby-chapter-1/"
-  placeholder="粘贴小说章节网址">
+  placeholder="粘贴小说章节网址"
+>
 
 <button id="fetchBtn">抓取章节</button>
 <p id="status">等待抓取。</p>
 
-<h3>正文预览</h3>
-<div id="preview">抓取成功后，正文会显示在这里。</div>
+<h3>正文预览 / 诊断结果</h3>
+<div id="preview">抓取后，正文或诊断信息会显示在这里。</div>
 
 <button id="downloadBtn" disabled>下载 TXT</button>
+<button id="copyBtn" disabled>复制诊断结果</button>
 
 <script>
 const $ = id => document.getElementById(id);
+
 let chapterText = "";
 let chapterTitle = "novel-chapter";
+let diagnosticText = "";
 
 function getTitle(doc) {
   const h = doc.querySelector(
     "h1.entry-title, h1, article h2"
   );
+
   return h?.textContent?.trim() ||
          doc.title?.trim() ||
          "小说章节";
 }
 
+function cleanText(text) {
+  return (text || "")
+    .replace(/\r/g, "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function extractContent(doc) {
   const selectors = [
     ".entry-content",
+    ".wp-block-post-content",
     ".post-content",
     ".article-content",
     ".chapter-content",
+    ".reading-content",
+    ".text-left",
+    "#content",
+    "#chapter-content",
     "article"
   ];
 
+  const candidates = [];
+
   for (const selector of selectors) {
-    const el = doc.querySelector(selector);
-    if (!el) continue;
+    for (const el of doc.querySelectorAll(selector)) {
+      const clone = el.cloneNode(true);
 
-    const clone = el.cloneNode(true);
-    clone.querySelectorAll(
-      "script, style, nav, header, footer, " +
-      "button, form, .sharedaddy, .jp-relatedposts"
-    ).forEach(node => node.remove());
+      clone.querySelectorAll(
+        "script, style, nav, header, footer, " +
+        "button, form, iframe, .sharedaddy, " +
+        ".jp-relatedposts, .ads, .advertisement"
+      ).forEach(node => node.remove());
 
-    const text = clone.innerText || clone.textContent || "";
-    const cleaned = text
-      .replace(/\r/g, "")
-      .replace(/[ \t]+\n/g, "\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
+      const text = cleanText(
+        clone.innerText || clone.textContent
+      );
 
-    if (cleaned.length > 300) return cleaned;
+      if (text.length > 300) {
+        candidates.push({
+          selector,
+          length: text.length,
+          text
+        });
+      }
+    }
+  }
+
+  candidates.sort((a, b) => b.length - a.length);
+
+  if (candidates.length) {
+    return candidates[0].text;
   }
 
   return "";
 }
 
-$("fetchBtn").addEventListener("click", async () => {
-  const url = $("url").value.trim();
+function makeDiagnostics(doc) {
+  const elements = [
+    ...doc.querySelectorAll(
+      '[class*="content"], [id*="content"], ' +
+      '[class*="chapter"], [id*="chapter"], ' +
+      '[class*="entry"], [class*="post"], ' +
+      'article, main'
+    )
+  ];
 
-  if (!url) {
+  const unique = [...new Set(elements)];
+
+  return {
+    pageTitle: doc.title || "",
+    pageLanguage: doc.documentElement?.lang || "",
+    headings: [...doc.querySelectorAll("h1, h2, h3")]
+      .slice(0, 15)
+      .map(el => ({
+        tag: el.tagName,
+        text: cleanText(el.innerText || el.textContent)
+          .slice(0, 180)
+      })),
+    candidates: unique.slice(0, 40).map(el => {
+      const text = cleanText(el.innerText || el.textContent);
+
+      return {
+        tag: el.tagName,
+        id: el.id || "",
+        className: String(el.className || "").slice(0, 180),
+        textLength: text.length,
+        preview: text.slice(0, 180)
+      };
+    })
+  };
+}
+
+$("fetchBtn").addEventListener("click", async () => {
+  const inputUrl = $("url").value.trim();
+
+  if (!inputUrl) {
     $("status").textContent = "请先输入章节网址。";
     return;
   }
 
-  let parsed;
+  let target;
+
   try {
-    parsed = new URL(url);
-    if (parsed.protocol !== "https:" &&
-        parsed.protocol !== "http:") {
-      throw new Error("网址格式不正确");
+    target = new URL(inputUrl);
+
+    if (!["https:", "http:"].includes(target.protocol)) {
+      throw new Error("网址协议不正确");
     }
   } catch {
     $("status").textContent = "网址无效，请检查后重试。";
@@ -114,15 +212,17 @@ $("fetchBtn").addEventListener("click", async () => {
 
   $("fetchBtn").disabled = true;
   $("downloadBtn").disabled = true;
-  $("status").textContent = "正在抓取，请稍候……";
+  $("copyBtn").disabled = true;
+
+  $("status").textContent = "正在请求代理……";
   $("preview").textContent = "";
   chapterText = "";
+  diagnosticText = "";
 
   try {
-    // 使用已测试成功的公共 CORS 代理
     const proxyUrl =
       "https://corsproxy.nl/" +
-      url.replace(/^https?:\/\//i, "");
+      target.href.replace(/^https?:\/\//i, "");
 
     const response = await fetch(proxyUrl);
 
@@ -131,51 +231,89 @@ $("fetchBtn").addEventListener("click", async () => {
     }
 
     const html = await response.text();
+
+    if (!html || html.length < 100) {
+      throw new Error("代理返回的网页内容太短。");
+    }
+
     const doc = new DOMParser().parseFromString(
-      html, "text/html"
+      html,
+      "text/html"
     );
 
     chapterTitle = getTitle(doc);
     chapterText = extractContent(doc);
 
-    if (!chapterText) {
-      throw new Error(
-        "网页已返回，但没有找到正文。可能需要调整正文提取规则。"
-      );
+    if (chapterText) {
+      $("preview").textContent =
+        chapterTitle + "\n\n" + chapterText;
+
+      $("status").textContent =
+        "抓取成功！HTML 长度：" + html.length +
+        " 字符；提取正文：" + chapterText.length +
+        " 字符。";
+
+      $("downloadBtn").disabled = false;
+      return;
     }
 
-    $("preview").textContent =
-      chapterTitle + "\n\n" + chapterText;
+    const info = makeDiagnostics(doc);
+
+    diagnosticText = JSON.stringify(info, null, 2);
+
+    $("preview").textContent = diagnosticText;
 
     $("status").textContent =
-      "抓取成功！正文约 " +
-      chapterText.length + " 个字符。";
+      "代理抓取成功，但没有匹配到正文容器。" +
+      "\nHTML 长度：" + html.length +
+      "\n请复制下面的诊断结果发给我。";
 
-    $("downloadBtn").disabled = false;
+    $("copyBtn").disabled = false;
+
   } catch (error) {
     $("status").textContent =
       "抓取失败：" + error.message +
-      "\n\n请稍后重试，或检查该网站是否限制了代理访问。";
+      "\n\n可能是代理暂时不可用、网站限制访问，或网络请求失败。";
   } finally {
     $("fetchBtn").disabled = false;
   }
 });
 
 $("downloadBtn").addEventListener("click", () => {
+  if (!chapterText) return;
+
   const blob = new Blob(
     [chapterTitle + "\n\n" + chapterText],
     { type: "text/plain;charset=utf-8" }
   );
 
-  const link = document.createElement("a");
   const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
 
   link.href = objectUrl;
-  link.download = (chapterTitle || "novel-chapter")
-    .replace(/[\\/:*?"<>|]/g, "_") + ".txt";
+  link.download =
+    (chapterTitle || "novel-chapter")
+      .replace(/[\\/:*?"<>|]/g, "_") + ".txt";
 
+  document.body.appendChild(link);
   link.click();
+  link.remove();
+
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+});
+
+$("copyBtn").addEventListener("click", async () => {
+  if (!diagnosticText) return;
+
+  try {
+    await navigator.clipboard.writeText(diagnosticText);
+    $("status").textContent =
+      "诊断结果已复制，请粘贴到聊天里。";
+  } catch {
+    $("preview").textContent = diagnosticText;
+    $("status").textContent =
+      "浏览器不允许直接复制，请长按诊断结果并手动复制。";
+  }
 });
 </script>
 </body>
