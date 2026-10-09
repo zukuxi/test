@@ -30,11 +30,27 @@ button:disabled{opacity:.45}
 </head>
 <body>
 <h1>小说转 EPUB</h1>
-<p class="note">自动沿着章节 Next 链接查找后续章节。遇到第一个付费章节立即停止，不再请求后续章节。</p>
+<p class="note">可以先读取目录并选择起始章节，也可以直接填写章节网址。遇到第一个付费章节立即停止。</p>
 
 <div class="panel">
-<label>起始章节网址</label>
+<h3>① 选择起始章节</h3>
+
+<label>小说目录网址（用于读取章节列表）</label>
+<input id="directoryUrl" placeholder="粘贴小说目录网址">
+
+<button class="primary" id="readDirectoryBtn">读取章节页面</button>
+<div id="directoryStatus" class="status"></div>
+
+<label>目录中找到的章节（读取成功后可选择）</label>
+<select id="directoryChapters" disabled>
+<option value="">尚未读取目录</option>
+</select>
+
+<p class="note">选择上面的章节会自动填入下方起始网址。如果目录读取失败，可以跳过目录，直接填写章节网址。</p>
+
+<label>起始章节网址（也可以手动填写）</label>
 <input id="startUrl" value="https://shanghaifantasy.com/my-blind-date-was-snatched-away-my-arch-rivals-brother-calls-me-baby-chapter-1/">
+
 <div class="grid">
 <div>
 <label>最多检查多少章</label>
@@ -55,7 +71,8 @@ button:disabled{opacity:.45}
 </select>
 </div>
 </div>
-<button class="primary" id="scanBtn">① 自动查找并抓取章节</button>
+
+<button class="primary" id="scanBtn">② 开始抓取章节</button>
 <button id="stopBtn" disabled>停止</button>
 <div id="log" role="status"></div>
 </div>
@@ -66,6 +83,7 @@ button:disabled{opacity:.45}
 <input id="bookTitle" value="My Blind Date Was Snatched Away? My Arch-Rival’s Brother Calls Me Baby">
 <label>作者（可留空）</label>
 <input id="author" placeholder="作者名">
+
 <div class="grid">
 <div>
 <label>字体大小</label>
@@ -92,7 +110,7 @@ button:disabled{opacity:.45}
 
 <div class="panel">
 <h3>章节列表</h3>
-<p class="note">付费章节不会加入 EPUB。遇到第一个付费章节后立即停止抓取。</p>
+<p class="note">付费章节会显示在列表中，但不会加入 EPUB。遇到第一个付费章节后停止抓取。</p>
 <button id="allBtn" disabled>全选免费章节</button>
 <button id="noneBtn" disabled>全部取消</button>
 <div id="chapters">尚未开始。</div>
@@ -100,7 +118,9 @@ button:disabled{opacity:.45}
 
 <div class="panel">
 <h3>正文预览</h3>
-<select id="previewSelect" disabled><option>暂无章节</option></select>
+<select id="previewSelect" disabled>
+<option>暂无章节</option>
+</select>
 <div id="preview">抓取完成后可以预览正文。</div>
 </div>
 
@@ -118,46 +138,148 @@ button:disabled{opacity:.45}
 
 const $ = id => document.getElementById(id);
 const PROXY = "https://corsproxy.nl/";
-const state = {chapters: [], stop:false, running:false};
+const state = {chapters:[],stop:false,running:false};
 
-const sleep = ms => new Promise(r => setTimeout(r,ms));
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
 
-function say(s){ $("log").textContent=s; }
-function text(el){return (el?.innerText||el?.textContent||"").replace(/\s+/g," ").trim();}
+function say(s){$("log").textContent=s;}
+function text(el){
+  return (el?.innerText||el?.textContent||"")
+    .replace(/\s+/g," ").trim();
+}
 
 function absolute(href,base){
   try{
     const u=new URL(href,base);
-    if(!/^https?:$/.test(u.protocol)) return null;
+    if(!/^https?:$/.test(u.protocol))return null;
     u.hash="";
     return u.href;
   }catch{return null;}
 }
 
 function proxyUrl(url){
-  return PROXY + url.replace(/^https?:\/\//i,"");
+  return PROXY+url.replace(/^https?:\/\//i,"");
 }
 
 async function getPage(url){
   const response=await fetch(proxyUrl(url),{cache:"no-store"});
-  if(!response.ok) throw new Error("HTTP "+response.status);
+  if(!response.ok)throw new Error("HTTP "+response.status);
 
   const html=await response.text();
-  if(html.length<500) throw new Error("网页内容过短");
+  if(html.length<500)throw new Error("网页内容过短");
 
   const doc=new DOMParser().parseFromString(html,"text/html");
 
   if(/Just a moment\.{0,3}|challenges\.cloudflare\.com/i.test(
-      doc.title+" "+text(doc.body).slice(0,1500))){
+    doc.title+" "+text(doc.body).slice(0,1500)
+  )){
     throw new Error("Cloudflare 验证页");
   }
 
   return doc;
 }
 
+/* 读取目录并寻找章节链接 */
+function findDirectoryChapters(doc,directoryUrl){
+  const directory=new URL(directoryUrl);
+  const found=[];
+  const seen=new Set();
+
+  for(const a of doc.querySelectorAll("a[href]")){
+    const href=absolute(a.getAttribute("href"),directoryUrl);
+    if(!href||seen.has(href))continue;
+
+    let u;
+    try{u=new URL(href);}catch{continue;}
+
+    // 只接受同一网站的章节页面，不把目录本身当作章节
+    if(u.hostname!==directory.hostname)continue;
+    if(u.pathname.replace(/\/+$/,"")===
+       directory.pathname.replace(/\/+$/,""))continue;
+
+    const label=text(a);
+    const path=u.pathname;
+
+    const looksLikeChapter=
+      /chapter/i.test(path)||
+      /\/ch(?:apter)?[-_/]?\d+/i.test(path)||
+      /\bchapter\s*[\d:.-]+/i.test(label)||
+      /第\s*\d+\s*章/.test(label);
+
+    if(!looksLikeChapter)continue;
+
+    // 排除明显不是章节的链接
+    if(/\/(tag|category|author|login|register)\//i.test(path))continue;
+
+    seen.add(href);
+    found.push({
+      url:href,
+      title:label||path.split("/").filter(Boolean).pop()||href
+    });
+  }
+
+  return found;
+}
+
+$("readDirectoryBtn").addEventListener("click",async()=>{
+  const input=$("directoryUrl").value.trim();
+  const url=absolute(input,location.href);
+
+  if(!url){
+    $("directoryStatus").textContent="请先填写有效的小说目录网址。";
+    return;
+  }
+
+  $("readDirectoryBtn").disabled=true;
+  $("directoryStatus").textContent="正在读取目录，请稍候……";
+
+  const select=$("directoryChapters");
+  select.replaceChildren();
+  select.disabled=true;
+
+  try{
+    const doc=await getPage(url);
+    const items=findDirectoryChapters(doc,url);
+
+    if(!items.length){
+      $("directoryStatus").textContent=
+        "页面读取成功，但没有识别到章节链接。你仍然可以手动填写章节网址。";
+      select.add(new Option("没有识别到章节",""));
+      return;
+    }
+
+    select.add(new Option("请选择起始章节",""));
+
+    items.forEach((item,i)=>{
+      const option=new Option(item.title,item.url);
+      option.dataset.url=item.url;
+      select.add(option);
+    });
+
+    select.disabled=false;
+    $("directoryStatus").textContent=
+      `读取成功：识别到 ${items.length} 个章节链接。请选择起始章节。`;
+
+  }catch(e){
+    $("directoryStatus").textContent=
+      `读取目录失败：${e.message}\n可以直接填写第 1 章网址继续使用。`;
+  }finally{
+    $("readDirectoryBtn").disabled=false;
+  }
+});
+
+/* 选中目录章节后，自动填入起始网址 */
+$("directoryChapters").addEventListener("change",()=>{
+  const url=$("directoryChapters").value;
+  if(url){
+    $("startUrl").value=url;
+    $("log").textContent="已设置起始章节。点击“开始抓取章节”即可。";
+  }
+});
+
 function getTitle(doc){
   const h=doc.querySelector("h1");
-  if(h && /chapter/i.test(text(h))) return text(h);
+  if(h&&/chapter/i.test(text(h)))return text(h);
 
   const title=text(doc.querySelector("title"));
   return title.replace(/\s*[–—-]\s*Shanghai Fantasy.*$/i,"").trim()
@@ -174,18 +296,19 @@ function getNextUrl(doc,currentUrl){
 
   for(const a of candidates){
     const href=absolute(a.getAttribute("href"),currentUrl);
-    if(href && /chapter/i.test(href) && href!==currentUrl) return href;
+    if(href&&/chapter/i.test(href)&&href!==currentUrl)return href;
   }
 
   const byAttr=links.find(a=>{
     const label=(a.getAttribute("aria-label")||"")+" "+
       (a.getAttribute("title")||"");
-    return /\bnext\b/i.test(label) && !/\bprevious\b/i.test(label);
+    return /\bnext\b/i.test(label)&&
+      !/\bprevious\b/i.test(label);
   });
 
   if(byAttr){
     const href=absolute(byAttr.getAttribute("href"),currentUrl);
-    if(href && /chapter/i.test(href) && href!==currentUrl) return href;
+    if(href&&/chapter/i.test(href)&&href!==currentUrl)return href;
   }
 
   return null;
@@ -193,8 +316,8 @@ function getNextUrl(doc,currentUrl){
 
 function hasPremium(doc){
   const pageText=text(doc.body);
-  return /###\s*Premium\s*Content/i.test(pageText) ||
-         /\bPremium\s+Content\b/i.test(pageText);
+  return /###\s*Premium\s*Content/i.test(pageText)||
+    /\bPremium\s+Content\b/i.test(pageText);
 }
 
 function extractBody(doc){
@@ -216,10 +339,10 @@ function extractBody(doc){
   for(const selector of selectors){
     elements=[...doc.querySelectorAll(selector)]
       .filter(el=>text(el).length>300);
-    if(elements.length) break;
+    if(elements.length)break;
   }
 
-  if(!elements.length) throw new Error("找不到正文区域");
+  if(!elements.length)throw new Error("找不到正文区域");
 
   elements.sort((a,b)=>text(b).length-text(a).length);
   const root=elements[0].cloneNode(true);
@@ -228,19 +351,20 @@ function extractBody(doc){
     "script,style,iframe,form,button,nav,header,footer,.ads,.advertisement"
   ).forEach(el=>el.remove());
 
-  if(/###\s*Premium\s*Content/i.test(text(root)) ||
+  if(/###\s*Premium\s*Content/i.test(text(root))||
      /\bPremium\s+Content\b/i.test(text(root))){
     return null;
   }
 
-  if(text(root).length<100) throw new Error("正文过短");
+  if(text(root).length<100)throw new Error("正文过短");
 
   return {html:root.innerHTML,plain:text(root)};
 }
 
 function chapterNum(title,url){
   const s=title+" "+url;
-  const m=s.match(/chapter[\s-]*(\d+)/i)||s.match(/第\s*(\d+)\s*章/);
+  const m=s.match(/chapter[\s-]*(\d+)/i)||
+    s.match(/第\s*(\d+)\s*章/);
   return m?Number(m[1]):null;
 }
 
@@ -251,7 +375,9 @@ function updateSummary(){
   const selected=free.filter(c=>c.selected);
 
   $("summary").textContent=
-    `已检查 ${state.chapters.length} 章；免费 ${free.length} 章；付费跳过 ${paid.length} 章；失败 ${failed.length} 章；已选 ${selected.length} 章。`;
+    `已处理 ${state.chapters.length} 章；免费 ${free.length} 章；`+
+    `付费章节 ${paid.length} 章；失败 ${failed.length} 章；`+
+    `已选 ${selected.length} 章。`;
 
   $("epubBtn").disabled=!selected.length;
 }
@@ -302,7 +428,9 @@ function updatePreviewList(){
   const sel=$("previewSelect");
   sel.replaceChildren();
 
-  const available=state.chapters.filter(c=>c.status==="免费"&&c.html);
+  const available=state.chapters.filter(
+    c=>c.status==="免费"&&c.html
+  );
 
   if(!available.length){
     sel.disabled=true;
@@ -311,9 +439,9 @@ function updatePreviewList(){
     return;
   }
 
-  available.forEach(c=>
-    sel.add(new Option(c.title,String(state.chapters.indexOf(c))))
-  );
+  available.forEach(c=>{
+    sel.add(new Option(c.title,String(state.chapters.indexOf(c))));
+  });
 
   sel.disabled=false;
   showPreview();
@@ -337,7 +465,6 @@ function showPreview(){
 
   const body=document.createElement("div");
   body.innerHTML=c.html;
-
   box.append(heading,body);
 }
 
@@ -388,7 +515,7 @@ $("scanBtn").addEventListener("click",async()=>{
   try{
     for(let i=0;i<max&&url&&!state.stop;i++){
       if(seen.has(url)){
-        stopReason="发现重复章节链接，已停止，避免无限循环。";
+        stopReason="发现重复章节链接，已停止。";
         break;
       }
 
@@ -412,7 +539,7 @@ $("scanBtn").addEventListener("click",async()=>{
         render();
         failures++;
         stopReason=
-          `第 ${i+1} 个页面读取失败：${e.message}\n无法可靠地继续抓取，已停止。`;
+          `第 ${i+1} 个页面读取失败：${e.message}\n已停止抓取。`;
         break;
       }
 
@@ -429,7 +556,7 @@ $("scanBtn").addEventListener("click",async()=>{
       };
 
       // 第一层检查：页面出现付费标记，立即停止。
-      // 此处绝不调用 getNextUrl，也不会请求下一章。
+      // 此分支不会调用 getNextUrl。
       if(hasPremium(doc)){
         chapter.status="付费已跳过";
         state.chapters.push(chapter);
@@ -437,16 +564,14 @@ $("scanBtn").addEventListener("click",async()=>{
 
         stopReason=
           `发现第一个付费章节，已立即停止。\n`+
-          `付费章节：${title}\n`+
-          `后续章节没有请求。`;
+          `付费章节：${title}\n后续章节没有请求。`;
         break;
       }
 
-      // 第二层检查：提取正文。如果正文容器中有付费标记，
-      // 也立即停止，不再寻找下一章。
       try{
         const body=extractBody(doc);
 
+        // 第二层检查：正文区域出现付费标记，也立即停止。
         if(!body){
           chapter.status="付费已跳过";
           state.chapters.push(chapter);
@@ -454,8 +579,7 @@ $("scanBtn").addEventListener("click",async()=>{
 
           stopReason=
             `发现第一个付费章节，已立即停止。\n`+
-            `付费章节：${title}\n`+
-            `后续章节没有请求。`;
+            `付费章节：${title}\n后续章节没有请求。`;
           break;
         }
 
@@ -463,6 +587,7 @@ $("scanBtn").addEventListener("click",async()=>{
         chapter.plain=body.plain;
         chapter.status="免费";
         chapter.selected=true;
+
       }catch(e){
         chapter.status="失败："+e.message;
         failures++;
@@ -471,8 +596,7 @@ $("scanBtn").addEventListener("click",async()=>{
       state.chapters.push(chapter);
       render();
 
-      // 只有确认当前章节不是付费章节后，才寻找下一章链接。
-      // getNextUrl 只解析当前已读取页面，不会额外发起网络请求。
+      // 只有当前章节已确认不是付费章节，才解析下一章链接。
       const next=getNextUrl(doc,url);
 
       if(!next){
@@ -482,25 +606,23 @@ $("scanBtn").addEventListener("click",async()=>{
 
       url=next;
 
-      if(i<max-1&&!state.stop){
-        await sleep(delay);
-      }
+      if(i<max-1&&!state.stop)await sleep(delay);
     }
 
     if(state.stop){
-      say("已停止。已抓取的免费章节仍然保留，可以生成 EPUB。");
+      say("已停止。此前抓取的免费章节仍然保留，可以生成 EPUB。");
     }else if(stopReason){
       say(`${stopReason}\n共处理 ${state.chapters.length} 个页面。`);
     }else if(state.chapters.length>=max){
-      say(
-        `已达到设置的上限 ${max} 章。\n`+
-        `本次共处理 ${state.chapters.length} 个页面。`
-      );
+      say(`已达到设置的上限 ${max} 章。`);
+    }else{
+      say(`抓取结束，共处理 ${state.chapters.length} 个页面。`);
     }
 
     if(failures){
       $("log").textContent+="\n注意：部分章节失败，请检查列表状态。";
     }
+
   }finally{
     state.running=false;
     $("scanBtn").disabled=false;
@@ -510,14 +632,15 @@ $("scanBtn").addEventListener("click",async()=>{
 });
 
 function xml(s){
-  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  return String(s).replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
 }
 
 function filename(s){
   return String(s).normalize("NFKD")
-    .replace(/[^\w.-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,70)
-    ||"novel";
+    .replace(/[^\w.-]+/g,"-")
+    .replace(/^-+|-+$/g,"").slice(0,70)||"novel";
 }
 
 function cleanHTML(html){
@@ -530,8 +653,7 @@ function cleanHTML(html){
     "script,style,iframe,form,button,nav,header,footer"
   ).forEach(el=>el.remove());
 
-  // 最后再检查一次，避免付费内容被写入 EPUB。
-  if(/###\s*Premium\s*Content/i.test(text(root)) ||
+  if(/###\s*Premium\s*Content/i.test(text(root))||
      /\bPremium\s+Content\b/i.test(text(root))){
     return "";
   }
@@ -590,13 +712,15 @@ $("epubBtn").addEventListener("click",async()=>{
 
     const spine=[];
     const toc=[];
+    let count=0;
 
-    chapters.forEach((c,i)=>{
-      const id="ch"+(i+1);
-      const file=id+".xhtml";
+    chapters.forEach(c=>{
       const body=cleanHTML(c.html);
-
       if(!body)return;
+
+      count++;
+      const id="ch"+count;
+      const file=id+".xhtml";
 
       oebps.file(file,
 `<?xml version="1.0" encoding="UTF-8"?>
@@ -612,9 +736,7 @@ $("epubBtn").addEventListener("click",async()=>{
       toc.push(`<li><a href="${file}">${xml(c.title)}</a></li>`);
     });
 
-    if(!spine.length){
-      throw new Error("没有可以写入 EPUB 的章节。");
-    }
+    if(!spine.length)throw new Error("没有可以写入 EPUB 的章节。");
 
     oebps.file("nav.xhtml",
 `<?xml version="1.0" encoding="UTF-8"?>
@@ -655,6 +777,7 @@ ${author?`<dc:creator>${xml(author)}</dc:creator>`:""}
 
     $("epubStatus").textContent=
       `完成：已打包 ${spine.length} 章。付费章节未加入。`;
+
   }catch(e){
     $("epubStatus").textContent="生成失败："+e.message;
   }finally{
