@@ -36,6 +36,8 @@
       start: '开始转换',
       cancel: '取消',
       zip: '下载全部结果 ZIP',
+      folderDownload: '保存到文件夹',
+      remove: '删除',
       clear: '清空队列',
       queueTitle: '源 PDF 队列',
       languageLabel: '语言 / Language'
@@ -63,6 +65,8 @@
       start: 'Start conversion',
       cancel: 'Cancel',
       zip: 'Download all results as ZIP',
+      folderDownload: 'Save to folder',
+      remove: 'Remove',
       clear: 'Clear queue',
       queueTitle: 'Source PDF queue',
       languageLabel: 'Language'
@@ -122,6 +126,13 @@
     return `${f.name}|${f.size}|${f.lastModified}|${f.webkitRelativePath || ''}`;
   }
 
+  function sourceFolderPath(group) {
+    const path = group[0]?.file.webkitRelativePath || '';
+    const parts = path.split('/').filter(Boolean);
+    // The final path segment is the PDF filename; keep its parent folders only.
+    return parts.slice(0, -1).map(safeName);
+  }
+
   function addFiles(files) {
     const known = new Set(queue.map(x => fileKey(x.file)));
 
@@ -149,7 +160,8 @@
       status(lang === 'en' ? `Added ${n} PDF(s).` : `已加入 ${n} 个 PDF。`, 0);
       loadPreview();
     } else {
-      status(arr.length ? '文件已在队列中。' : '没有找到 PDF 文件。', 0);
+      status(arr.length ? (lang === 'en' ? 'Files are already in the queue.' : '文件已在队列中。')
+        : (lang === 'en' ? 'No PDF files found.' : '没有找到 PDF 文件。'), 0);
     }
 
     renderQueue();
@@ -213,6 +225,9 @@
           b.className = 'secondary small';
           b.textContent = txt;
           b.disabled = d < 0 ? i === 0 : i === queue.length - 1;
+          b.title = lang === 'en'
+            ? (d < 0 ? 'Move up' : 'Move down')
+            : (d < 0 ? '上移' : '下移');
 
           b.onclick = () => {
             const j = i + d;
@@ -223,16 +238,44 @@
 
           controls.append(b);
         }
+
+        const removeButton = document.createElement('button');
+        removeButton.className = 'secondary small';
+        removeButton.textContent = tr('remove');
+        removeButton.title = lang === 'en' ? 'Remove this PDF from the queue' : '从队列移除此 PDF';
+        removeButton.onclick = () => {
+          if (running) return;
+          const wasPreviewFile = i === 0;
+          queue.splice(i, 1);
+          renderQueue();
+
+          if (wasPreviewFile) {
+            previewKey = '';
+            previewPages = [];
+            previewIndex = 0;
+            previewPdf?.destroy();
+            previewPdf = null;
+          }
+
+          loadPreview();
+          status(lang === 'en' ? 'PDF removed from the queue.' : '已从队列删除该 PDF。', 0);
+        };
+        controls.append(removeButton);
       }
 
       li.append(controls);
       ul.append(li);
     });
 
-    $('go').disabled = running || !queue.length;
+    $('go').disabled = running || !queue.some(x =>
+      x.state === '等待转换' || x.state === 'Waiting' ||
+      x.state === '失败' || x.state === 'Failed'
+    );
     $('clear').disabled = running || (!queue.length && !outputs.length);
     $('cancel').disabled = !running;
     $('zip').disabled = running || !outputs.length;
+    const folderButton = $('folderDownload');
+    if (folderButton) folderButton.disabled = running || !outputs.length;
   }
 
   function renderOutputs() {
@@ -668,11 +711,11 @@
   }
 
   /*
-   * 核心修改：
-   * 1. 固定按宽度缩放到 528 像素。
-   * 2. 超过 792 像素高度的页面切成多页。
-   * 3. 较短的普通页面仍然只输出一页，并垂直居中。
-   * 4. 预览和正式转换都调用本函数。
+   * Core page conversion:
+   * 1. Scale to 528 pixels wide.
+   * 2. Slice pages taller than 792 pixels into 792-pixel-high segments.
+   * 3. Vertically center a single shorter page.
+   * 4. Preview and conversion share this function.
    */
   function drawSourceToTargetPages(sourceCanvas) {
     if (!sourceCanvas.width || !sourceCanvas.height) {
@@ -795,6 +838,7 @@
         previewPages = [];
         previewPdf?.destroy();
         previewPdf = null;
+        previewKey = '';
 
         $('preview').getContext('2d').clearRect(0, 0, W, H);
         updatePageLabel();
@@ -814,10 +858,6 @@
           data: await file.arrayBuffer()
         }).promise;
 
-        /*
-         * 预览的是前 5 个输出页面，不是原 PDF 的前 5 个页面。
-         * 一个长页面可能生成多张切片。
-         */
         for (
           let n = 1;
           n <= previewPdf.numPages && previewPages.length < 5;
@@ -950,10 +990,6 @@
             background: 'rgb(255,255,255)'
           }).promise;
 
-          /*
-           * 一个 PDF 页面可能生成多个 X3 页面。
-           * 每个切片都单独处理、打包。
-           */
           const grayPages = drawSourceToTargetPages(c);
 
           for (const gray of grayPages) {
@@ -997,7 +1033,6 @@
     }
 
     const name = outputName(group, groupIndex);
-
     const data = buildBook(
       pages,
       s.depth === 2,
@@ -1008,7 +1043,8 @@
       name,
       blob: new Blob([data], { type: 'application/octet-stream' }),
       pdfs: group.length,
-      pages: pageTotal
+      pages: pageTotal,
+      folderPath: sourceFolderPath(group)
     };
   }
 
@@ -1093,9 +1129,97 @@
     renderOutputs();
 
     $('bar').style.width = '0';
-    status('队列已清空。', 0);
+    status(lang === 'en' ? 'Queue cleared.' : '队列已清空。', 0);
     loadPreview();
   };
+
+  async function saveToFolder() {
+    if (!outputs.length || running) return;
+
+    if (!window.showDirectoryPicker) {
+      status(
+        lang === 'en'
+          ? 'Direct folder saving is not supported in this browser. Please use ZIP download.'
+          : '当前浏览器不支持直接保存到文件夹，请使用 ZIP 下载。',
+        0
+      );
+      return;
+    }
+
+    try {
+      const root = await window.showDirectoryPicker({ mode: 'readwrite' });
+      const used = new Map();
+
+      for (let i = 0; i < outputs.length; i++) {
+        const o = outputs[i];
+        let dir = root;
+
+        for (const part of (o.folderPath || [])) {
+          dir = await dir.getDirectoryHandle(safeName(part), { create: true });
+        }
+
+        const baseName = o.name;
+        let finalName = baseName;
+        let k = 2;
+        const folderKey = (o.folderPath || []).join('/').toLowerCase();
+        const usedKey = `${folderKey}/${finalName.toLowerCase()}`;
+
+        while (used.has(usedKey) || await fileExists(dir, finalName)) {
+          finalName = baseName.replace(/(\.[^.]+)$/i, ` (${k++})$1`);
+        }
+        used.set(`${folderKey}/${finalName.toLowerCase()}`, true);
+
+        const fileHandle = await dir.getFileHandle(finalName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(o.blob);
+        await writable.close();
+
+        status(
+          lang === 'en'
+            ? `Saving files: ${i + 1}/${outputs.length} — ${finalName}`
+            : `正在保存文件：${i + 1}/${outputs.length} — ${finalName}`,
+          ((i + 1) / outputs.length) * 100
+        );
+      }
+
+      status(
+        lang === 'en'
+          ? `Saved ${outputs.length} file(s) to the selected folder.`
+          : `已将 ${outputs.length} 个文件保存到所选文件夹。`,
+        100
+      );
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        status((lang === 'en' ? 'Folder save failed: ' : '保存到文件夹失败：') + e.message, 0);
+      }
+    }
+  }
+
+  async function fileExists(dir, name) {
+    try {
+      await dir.getFileHandle(name);
+      return true;
+    } catch (e) {
+      if (e.name === 'NotFoundError') return false;
+      throw e;
+    }
+  }
+
+  const folderButton = $('folderDownload');
+  if (folderButton) {
+    folderButton.onclick = saveToFolder;
+  } else {
+    // Keep this JS compatible with the current page even if the button is absent.
+    const zipButton = $('zip');
+    const button = document.createElement('button');
+    button.id = 'folderDownload';
+    button.className = 'secondary';
+    button.disabled = true;
+    button.textContent = tr('folderDownload');
+    button.setAttribute('data-i18n', 'folderDownload');
+    button.onclick = saveToFolder;
+    zipButton.insertAdjacentElement('afterend', button);
+  }
 
   $('zip').onclick = async () => {
     if (!window.JSZip || !outputs.length) return;
@@ -1104,11 +1228,13 @@
     const used = new Set();
 
     for (const o of outputs) {
-      let n = o.name;
+      const folder = (o.folderPath || []).join('/');
+      let n = folder ? `${folder}/${o.name}` : o.name;
       let k = 2;
+      const original = n;
 
       while (used.has(n.toLowerCase())) {
-        n = o.name.replace(/(\.[^.]+)$/i, ` (${k++})$1`);
+        n = original.replace(/(\.[^.]+)$/i, ` (${k++})$1`);
       }
 
       used.add(n.toLowerCase());
