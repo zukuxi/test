@@ -2,15 +2,28 @@
   let pdfjsLib = null;
   let pdfjsLoadError = null;
 
-  try {
-    pdfjsLib = await import(
-      'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs'
-    );
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
-  } catch (error) {
-    pdfjsLoadError = error;
-    console.error('PDF.js failed to load:', error);
+  // Try two CDNs so one failed CDN does not immediately break the app.
+  const pdfjsSources = [
+    {
+      main: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs',
+      worker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs'
+    },
+    {
+      main: 'https://unpkg.com/pdfjs-dist@4.10.38/build/pdf.min.mjs',
+      worker: 'https://unpkg.com/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs'
+    }
+  ];
+
+  for (const source of pdfjsSources) {
+    try {
+      pdfjsLib = await import(source.main);
+      pdfjsLib.GlobalWorkerOptions.workerSrc = source.worker;
+      pdfjsLoadError = null;
+      break;
+    } catch (error) {
+      pdfjsLoadError = error;
+      console.error('PDF.js CDN failed:', source.main, error);
+    }
   }
 
   const W = 528;
@@ -69,7 +82,7 @@
       removed: '已从队列删除该 PDF。',
       cleared: '队列已清空。',
       completedHint: '转换完成后显示结果。',
-      pdfRemoved: 'PDF removed from the queue.',
+      pdfRemoved: '已从队列删除该 PDF。',
       noFolderSupport: '当前浏览器不支持直接保存到文件夹。请使用支持此功能的 Chrome/Edge，或改用单独下载/ZIP。',
       folderCancelled: '已取消选择保存文件夹。',
       folderReady: '保存文件夹已选择：',
@@ -185,6 +198,7 @@
   let previewPages = [];
   let previewIndex = 0;
   let previewKey = '';
+  let previewRequestId = 0;
   let outputDirectoryHandle = null;
   let savingFolder = false;
 
@@ -207,7 +221,7 @@
   }
 
   function applyLang() {
-    lang = $('language').value;
+    lang = $('language').value === 'en' ? 'en' : 'zh';
     document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
 
     document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -219,6 +233,11 @@
     renderQueue();
     renderOutputs();
     updatePageLabel();
+
+    // Do not replace an active progress message just because the language changed.
+    if (pdfjsLoadError) {
+      status(tr('pdfjsFailed') + ' ' + pdfjsLoadError.message, 0);
+    }
   }
 
   $('language').addEventListener('change', applyLang);
@@ -233,11 +252,9 @@
     const el = $('folderStatus');
     if (!el) return;
 
-    if (outputDirectoryHandle) {
-      el.textContent = tr('folderChosen') + outputDirectoryHandle.name;
-    } else {
-      el.textContent = tr('folderNotChosen');
-    }
+    el.textContent = outputDirectoryHandle
+      ? tr('folderChosen') + outputDirectoryHandle.name
+      : tr('folderNotChosen');
   }
 
   function safeName(value) {
@@ -273,9 +290,10 @@
       const key = fileKey(file);
 
       if (!known.has(key)) {
+        // Internal states are language-independent.
         queue.push({
           file,
-          state: tr('waiting')
+          state: 'waiting'
         });
         known.add(key);
         added++;
@@ -335,13 +353,13 @@
 
       const state = document.createElement('span');
       state.className = 'file-state ' +
-        (item.state === 'Done' || item.state === '完成'
+        (item.state === 'done'
           ? 'ok'
-          : item.state === 'Failed' || item.state === '失败'
+          : item.state === 'failed'
             ? 'err'
             : '');
 
-      state.textContent = item.state;
+      state.textContent = tr(item.state);
       li.append(info, state);
 
       const controls = document.createElement('span');
@@ -392,8 +410,12 @@
             previewKey = '';
             previewPages = [];
             previewIndex = 0;
-            previewPdf?.destroy();
-            previewPdf = null;
+            previewRequestId++;
+
+            if (previewPdf) {
+              previewPdf.destroy();
+              previewPdf = null;
+            }
           }
 
           renderQueue();
@@ -409,26 +431,18 @@
     });
 
     const hasPending = queue.some(item =>
-      isWaiting(item.state) || isFailed(item.state)
+      item.state === 'waiting' || item.state === 'failed'
     );
 
     $('go').disabled = running || !hasPending;
     $('clear').disabled = running || (!queue.length && !outputs.length);
     $('cancel').disabled = !running;
-    $('zip').disabled = running || !outputs.length;
+    $('zip').disabled = running || savingFolder || !outputs.length;
 
     const chooseFolderButton = $('chooseFolder');
     if (chooseFolderButton) {
       chooseFolderButton.disabled = running || savingFolder;
     }
-  }
-
-  function isWaiting(state) {
-    return state === '等待转换' || state === 'Waiting';
-  }
-
-  function isFailed(state) {
-    return state === '失败' || state === 'Failed';
   }
 
   function renderOutputs() {
@@ -807,10 +821,10 @@
     }
 
     const output = new Uint8Array(16);
-    const view = new DataView(output.buffer);
+    const outputView = new DataView(output.buffer);
 
     [a0, b0, c0, d0].forEach((value, index) => {
-      view.setUint32(index * 4, value, true);
+      outputView.setUint32(index * 4, value, true);
     });
 
     return output;
@@ -1033,6 +1047,13 @@
     context.putImageData(imageData, 0, 0);
   }
 
+  function clearPreviewCanvas() {
+    const canvas = $('preview');
+    const context = canvas.getContext('2d');
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
   function updatePageLabel() {
     const count = previewPages.length;
 
@@ -1045,86 +1066,136 @@
   }
 
   async function loadPreview() {
-    try {
-      if (!pdfjsLib) {
-        throw Error(
-          'PDF.js 加载失败，请检查网络/CDN 后刷新。详情见浏览器控制台。'
-        );
-      }
+    const requestId = ++previewRequestId;
 
+    try {
       const file = queue[0]?.file;
 
       if (!file) {
-        previewPages = [];
-        previewPdf?.destroy();
-        previewPdf = null;
         previewKey = '';
+        previewPages = [];
+        previewIndex = 0;
 
-        $('preview').getContext('2d').clearRect(0, 0, W, H);
+        if (previewPdf) {
+          previewPdf.destroy();
+          previewPdf = null;
+        }
+
+        clearPreviewCanvas();
         updatePageLabel();
         return;
       }
 
+      if (!pdfjsLib) {
+        throw Error(
+          tr('pdfjsFailed') +
+          (pdfjsLoadError?.message ? ' ' + pdfjsLoadError.message : '')
+        );
+      }
+
       const key = fileKey(file);
 
-      if (key !== previewKey) {
-        previewKey = key;
-        previewPdf?.destroy();
-        previewPdf = null;
-        previewPages = [];
-        previewIndex = 0;
-
-        previewPdf = await pdfjsLib.getDocument({
+      // Reuse the loaded preview only when it is complete.
+      if (key !== previewKey || !previewPages.length) {
+        const loadingTask = pdfjsLib.getDocument({
           data: await file.arrayBuffer()
-        }).promise;
+        });
 
-        for (
-          let number = 1;
-          number <= previewPdf.numPages && previewPages.length < 5;
-          number++
-        ) {
-          const page = await previewPdf.getPage(number);
-          const viewport = page.getViewport({ scale: 2 });
-          const canvas = document.createElement('canvas');
+        const newPdf = await loadingTask.promise;
+        const newPages = [];
 
-          canvas.width = Math.ceil(viewport.width);
-          canvas.height = Math.ceil(viewport.height);
+        try {
+          for (
+            let number = 1;
+            number <= newPdf.numPages && newPages.length < 5;
+            number++
+          ) {
+            if (requestId !== previewRequestId) {
+              await newPdf.destroy();
+              return;
+            }
 
-          const context = canvas.getContext('2d', {
-            willReadFrequently: true
-          });
+            const page = await newPdf.getPage(number);
+            const viewport = page.getViewport({ scale: 2 });
+            const canvas = document.createElement('canvas');
 
-          if (!context) {
-            throw Error('无法创建预览画布上下文。');
+            canvas.width = Math.ceil(viewport.width);
+            canvas.height = Math.ceil(viewport.height);
+
+            const context = canvas.getContext('2d', {
+              willReadFrequently: true
+            });
+
+            if (!context) {
+              throw Error('无法创建预览画布上下文。');
+            }
+
+            await page.render({
+              canvasContext: context,
+              viewport,
+              background: 'rgb(255,255,255)'
+            }).promise;
+
+            if (requestId !== previewRequestId) {
+              canvas.width = 1;
+              canvas.height = 1;
+              await newPdf.destroy();
+              return;
+            }
+
+            const sliced = drawSourceToTargetPages(canvas);
+
+            newPages.push(
+              ...sliced.slice(0, 5 - newPages.length)
+            );
+
+            page.cleanup?.();
+
+            canvas.width = 1;
+            canvas.height = 1;
           }
 
-          await page.render({
-            canvasContext: context,
-            viewport,
-            background: 'rgb(255,255,255)'
-          }).promise;
+          if (requestId !== previewRequestId) {
+            await newPdf.destroy();
+            return;
+          }
 
-          const sliced = drawSourceToTargetPages(canvas);
-          previewPages.push(
-            ...sliced.slice(0, 5 - previewPages.length)
-          );
+          if (previewPdf) {
+            await previewPdf.destroy();
+          }
 
-          page.cleanup?.();
+          previewPdf = newPdf;
+          previewPages = newPages;
+          previewIndex = 0;
+          previewKey = key;
+        } catch (error) {
+          await newPdf.destroy();
 
-          canvas.width = 1;
-          canvas.height = 1;
+          if (requestId === previewRequestId) {
+            previewKey = '';
+            previewPages = [];
+            previewIndex = 0;
+          }
+
+          throw error;
         }
       }
+
+      if (requestId !== previewRequestId) return;
 
       if (previewPages.length) {
         paintPreview(previewPages[previewIndex]);
       } else {
-        $('preview').getContext('2d').clearRect(0, 0, W, H);
+        clearPreviewCanvas();
       }
 
       updatePageLabel();
     } catch (error) {
-      status(tr('previewFailed') + error.message);
+      if (requestId !== previewRequestId) return;
+
+      console.error('Preview failed:', error);
+      status(tr('previewFailed') + (error.message || String(error)), 0);
+      updatePageLabel();
     }
   }
 
@@ -1161,8 +1232,13 @@
         ['brightness', 'brightnessValue'],
         ['strength', 'strengthValue']
       ]) {
-        $(outputId).textContent =
-          $(inputId).value + (inputId === 'strength' ? '%' : '');
+        const output = $(outputId);
+
+        if (output) {
+          output.textContent =
+            $(inputId).value +
+            (inputId === 'strength' ? '%' : '');
+        }
       }
 
       if (previewPages[previewIndex]) {
@@ -1174,7 +1250,8 @@
   async function convertGroup(group, groupIndex, total) {
     if (!pdfjsLib) {
       throw Error(
-        'PDF.js 加载失败，请检查网络/CDN 后刷新。详情见浏览器控制台。'
+        tr('pdfjsFailed') +
+        (pdfjsLoadError?.message ? ' ' + pdfjsLoadError.message : '')
       );
     }
 
@@ -1186,7 +1263,7 @@
       if (cancelled) throw Error('Cancelled');
 
       const item = group[fileIndex];
-      item.state = tr('converting');
+      item.state = 'converting';
       renderQueue();
 
       const pdf = await pdfjsLib.getDocument({
@@ -1264,7 +1341,7 @@
         await pdf.destroy();
       }
 
-      item.state = tr('done');
+      item.state = 'done';
       renderQueue();
     }
 
@@ -1362,11 +1439,11 @@
   }
 
   async function chooseOutputFolder() {
-    if (running || savingFolder) return;
+    if (running || savingFolder) return false;
 
     if (!window.showDirectoryPicker) {
       status(tr('noFolderSupport'), 0);
-      return;
+      return false;
     }
 
     try {
@@ -1382,12 +1459,15 @@
 
       updateFolderStatus();
       status(tr('folderReady') + handle.name, 0);
+      return true;
     } catch (error) {
       if (error.name === 'AbortError') {
-        status(tr('folderCancelled'));
+        status(tr('folderCancelled'), 0);
       } else {
         status(tr('folderSaveFailed') + error.message, 0);
       }
+
+      return false;
     }
   }
 
@@ -1452,13 +1532,26 @@
 
     const mode = selectedDownloadMode();
 
+    // If folder mode is selected, open the folder picker from the button click.
     if (mode === 'folder' && !outputDirectoryHandle) {
-      status(tr('needFolder'), 0);
-      return;
+      const selected = await chooseOutputFolder();
+
+      if (!selected || !outputDirectoryHandle) {
+        return;
+      }
     }
 
     if (mode === 'folder' && !window.showDirectoryPicker) {
       status(tr('noFolderSupport'), 0);
+      return;
+    }
+
+    if (!pdfjsLib) {
+      status(
+        tr('pdfjsFailed') +
+        (pdfjsLoadError?.message ? ' ' + pdfjsLoadError.message : ''),
+        0
+      );
       return;
     }
 
@@ -1473,7 +1566,7 @@
     renderOutputs();
 
     const todo = queue.filter(item =>
-      isWaiting(item.state) || isFailed(item.state)
+      item.state === 'waiting' || item.state === 'failed'
     );
 
     const groups = groupsOf(todo);
@@ -1527,7 +1620,7 @@
           failed++;
 
           for (const item of groups[index]) {
-            item.state = tr('failed');
+            item.state = 'failed';
           }
 
           console.error(error);
@@ -1587,9 +1680,13 @@
     queue = [];
     outputs = [];
     previewPages = [];
+    previewRequestId++;
 
-    previewPdf?.destroy();
-    previewPdf = null;
+    if (previewPdf) {
+      previewPdf.destroy();
+      previewPdf = null;
+    }
+
     previewKey = '';
     previewIndex = 0;
 
@@ -1625,9 +1722,11 @@
     });
   });
 
+  // Initialise labels and controls.
   renderQueue();
   renderOutputs();
   applyLang();
+  updatePageLabel();
 
   if (pdfjsLoadError) {
     status(
