@@ -1,4 +1,5 @@
-let pdfjsLib = null;
+(async function () {
+  let pdfjsLib = null;
 let pdfjsLoadError = null;
 try {
   pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs');
@@ -51,3 +52,4 @@ $('cancel').onclick=()=>{cancelled=true;status(lang==='en'?'Cancellation request
 $('clear').onclick=()=>{if(running)return;queue=[];outputs=[];previewPages=[];previewPdf?.destroy();previewPdf=null;previewKey='';renderQueue();renderOutputs();$('bar').style.width='0';status('队列已清空。',0);loadPreview()};
 $('zip').onclick=async()=>{if(!window.JSZip||!outputs.length)return;const z=new window.JSZip(),used=new Set();for(const o of outputs){let n=o.name,k=2;while(used.has(n.toLowerCase())){n=o.name.replace(/(\.[^.]+)$/i,` (${k++})$1`)}used.add(n.toLowerCase());z.file(n,o.blob)}status(lang==='en'?'Building ZIP…':'正在打包 ZIP…',0);const blob=await z.generateAsync({type:'blob',compression:'STORE'},m=>{$('bar').style.width=m.percent+'%'});download(blob,'X3-original-style-test-results.zip');status(lang==='en'?`ZIP ready: ${outputs.length} file(s).`:`ZIP 打包完成：${outputs.length} 个文件。`,100)};
 renderQueue();renderOutputs();applyLang();if(pdfjsLoadError){status((lang==='en'?'PDF.js could not load. Check your network/CDN and refresh. Details are in the browser console. ':'PDF.js 加载失败。请检查网络/CDN 后刷新，具体原因请查看浏览器控制台。')+(pdfjsLoadError.message||pdfjsLoadError),0);}
+})();
