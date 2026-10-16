@@ -144,7 +144,38 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   align-items: center;
 }
 .footer { color: var(--muted); font-size: .82rem; margin: 18px 0; }
-a { color: var(--accent); }
+.download-options {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.download-options > strong { display: block; margin-bottom: 8px; }
+.download-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+.download-mode {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  background: #0f141d;
+  border: 1px solid #465166;
+  border-radius: 9px;
+  padding: 10px;
+  cursor: pointer;
+}
+.download-mode input { margin-top: 5px; flex-shrink: 0; }
+.download-mode span { display: block; }
+.download-mode small {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 3px;
+}
+#folderStatus { margin-top: 8px; }
 @media(max-width:560px) {
   .wrap { padding: 10px; }
   .panel { padding: 12px; }
@@ -285,6 +316,48 @@ a { color: var(--accent); }
 </section>
 
 <section class="panel">
+  <h2 data-i18n="downloadModeTitle">下载方式（转换前选择）</h2>
+
+  <div class="download-options">
+    <strong data-i18n="downloadModeLabel">选择转换完成后的保存方式</strong>
+
+    <div class="download-modes">
+      <label class="download-mode">
+        <input type="radio" name="downloadMode" value="individual" checked>
+        <span>
+          <b data-i18n="individualMode">单独下载</b>
+          <small data-i18n="individualModeHint">转换完成后，在结果列表逐本下载。</small>
+        </span>
+      </label>
+
+      <label class="download-mode">
+        <input type="radio" name="downloadMode" value="zip">
+        <span>
+          <b data-i18n="zipMode">打包 ZIP</b>
+          <small data-i18n="zipModeHint">转换完成后，将所有结果打包成一个 ZIP。</small>
+        </span>
+      </label>
+
+      <label class="download-mode">
+        <input type="radio" name="downloadMode" value="folder">
+        <span>
+          <b data-i18n="folderMode">自动保存到文件夹</b>
+          <small data-i18n="folderModeHint">先选择目标文件夹，每本完成后自动保存。</small>
+        </span>
+      </label>
+    </div>
+
+    <div class="actions">
+      <button id="chooseFolder" class="secondary" type="button" data-i18n="chooseFolder">
+        选择保存文件夹
+      </button>
+    </div>
+
+    <div id="folderStatus" class="hint" data-i18n="folderNotChosen">
+      尚未选择保存文件夹。
+    </div>
+  </div>
+
   <div class="section-head">
     <h2 data-i18n="outputsTitle">转换结果</h2>
     <span class="hint" id="outCount">0</span>
@@ -293,14 +366,9 @@ a { color: var(--accent); }
   <div class="actions">
     <button id="go" disabled data-i18n="start">开始转换</button>
     <button id="cancel" class="secondary" disabled data-i18n="cancel">取消</button>
-    <button id="zip" class="secondary" disabled data-i18n="zip">下载全部结果 ZIP</button>
-    <button id="folderDownload" class="secondary" disabled data-i18n="folderDownload">保存到文件夹</button>
+    <button id="zip" class="secondary" disabled data-i18n="zipDownload">下载全部结果 ZIP</button>
     <button id="clear" class="secondary" disabled data-i18n="clear">清空队列</button>
   </div>
-
-  <p class="hint" data-i18n="downloadHint">
-    可以单独下载转换结果，也可以下载 ZIP 或保存到文件夹。
-  </p>
 
   <div class="progress">
     <div class="bar" id="bar"></div>
