@@ -3,64 +3,340 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>X3 PDF → XTC 原版逐页渲染测试版</title>
+<meta name="theme-color" content="#10131a">
+<title>X3 PDF → XTC / XTCH 转换工具</title>
+
 <style>
-:root{color-scheme:dark;--bg:#10131a;--panel:#191f2b;--line:#30394a;--text:#eef2f8;--muted:#aab4c5;--accent:#7aa2ff}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-.wrap{max-width:980px;margin:auto;padding:18px}.topbar{display:flex;justify-content:flex-end;margin-bottom:12px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
-h1{font-size:1.45rem;margin:4px 0 8px}h2{font-size:1.08rem;margin:0 0 10px}.hint{color:var(--muted);font-size:.9rem}
-.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:12px 0}
-.field{display:flex;flex-direction:column;gap:6px;min-width:0}label{font-weight:600}input,select,button{font:inherit}input[type=file],input[type=text],select{width:100%;background:#0f141d;color:var(--text);border:1px solid #465166;border-radius:8px;padding:9px}
-input[type=range]{width:100%;accent-color:var(--accent)}input[type=checkbox]{margin-right:7px}
-.drop{border:1px dashed #4a5870;border-radius:10px;padding:12px;margin:8px 0}
-button{border:0;border-radius:9px;background:var(--accent);color:#101522;font-weight:700;padding:10px 14px;cursor:pointer}
-button.secondary{background:#30394a;color:var(--text)}button.small{padding:6px 10px;font-size:.88rem}button:disabled{opacity:.45;cursor:not-allowed}
-.actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.progress{height:8px;background:#0c1017;border-radius:99px;overflow:hidden}.bar{height:100%;width:0;background:var(--accent);transition:width .15s}
-.status{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:10px;color:#d5deeb}.queue{list-style:none;padding:0;margin:8px 0}.queue li{display:flex;align-items:center;gap:10px;border-top:1px solid var(--line);padding:10px 0}.file-info{flex:1;min-width:0}.filename{overflow-wrap:anywhere;font-weight:600}.file-detail{color:var(--muted);font-size:.84rem;overflow-wrap:anywhere}.file-state{font-size:.83rem;color:var(--muted);white-space:nowrap}.ok{color:#8de0a8}.err{color:#ff9c9c}
-.preview-controls{display:flex;align-items:center;gap:10px;margin:8px 0}#preview{display:block;max-width:100%;width:min(528px,100%);height:auto;image-rendering:pixelated;border:1px solid #414b5d;background:#fff;margin:auto}
-.slider-value{color:var(--muted);font-size:.88rem}.checkline{margin:10px 0}.section-head{display:flex;justify-content:space-between;gap:8px;align-items:center}.footer{color:var(--muted);font-size:.82rem;margin:18px 0}
-@media(max-width:560px){.wrap{padding:10px}.panel{padding:12px}.queue li{align-items:flex-start}.file-state{white-space:normal}}
+:root {
+  color-scheme: dark;
+  --bg: #10131a;
+  --panel: #191f2b;
+  --line: #30394a;
+  --text: #eef2f8;
+  --muted: #aab4c5;
+  --accent: #7aa2ff;
+  --danger: #ff8585;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 980px; margin: auto; padding: 18px; }
+.topbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  margin: 12px 0;
+}
+h1 { font-size: 1.45rem; margin: 4px 0 8px; }
+h2 { font-size: 1.08rem; margin: 0 0 10px; }
+p { overflow-wrap: anywhere; }
+.hint { color: var(--muted); font-size: .9rem; }
+.row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+label { font-weight: 600; }
+input, select, button { font: inherit; }
+input[type=file], input[type=text], select {
+  width: 100%;
+  background: #0f141d;
+  color: var(--text);
+  border: 1px solid #465166;
+  border-radius: 8px;
+  padding: 9px;
+}
+input[type=range] { width: 100%; accent-color: var(--accent); }
+input[type=checkbox] { margin-right: 7px; }
+.drop {
+  border: 1px dashed #4a5870;
+  border-radius: 10px;
+  padding: 12px;
+  margin: 8px 0;
+}
+button {
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #101522;
+  font-weight: 700;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+button.secondary { background: #30394a; color: var(--text); }
+button.danger { background: #562d37; color: #ffd9df; }
+button.small { padding: 6px 10px; font-size: .88rem; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.progress {
+  height: 8px;
+  background: #0c1017;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.bar {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width .15s;
+}
+.status {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-top: 10px;
+  color: #d5deeb;
+}
+.queue { list-style: none; padding: 0; margin: 8px 0; }
+.queue li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+}
+.file-info { flex: 1; min-width: 0; }
+.filename { overflow-wrap: anywhere; font-weight: 600; }
+.file-detail {
+  color: var(--muted);
+  font-size: .84rem;
+  overflow-wrap: anywhere;
+}
+.file-state { font-size: .83rem; color: var(--muted); white-space: nowrap; }
+.ok { color: #8de0a8; }
+.err { color: #ff9c9c; }
+.file-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.preview-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+#preview {
+  display: block;
+  max-width: 100%;
+  width: min(528px, 100%);
+  height: auto;
+  image-rendering: pixelated;
+  border: 1px solid #414b5d;
+  background: #fff;
+  margin: auto;
+}
+.slider-value { color: var(--muted); font-size: .88rem; }
+.checkline { margin: 10px 0; }
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.footer { color: var(--muted); font-size: .82rem; margin: 18px 0; }
+a { color: var(--accent); }
+@media(max-width:560px) {
+  .wrap { padding: 10px; }
+  .panel { padding: 12px; }
+  .queue li { align-items: flex-start; flex-wrap: wrap; }
+  .file-info { flex-basis: 60%; }
+  .file-state { white-space: normal; }
+  .file-controls { margin-left: auto; }
+}
 </style>
 </head>
-<body><main class="wrap">
-<div class="topbar"><label><span data-i18n="languageLabel">语言 / Language</span>
-<select id="language"><option value="zh">中文</option><option value="en">English</option></select></label></div>
-<section class="panel">
-<h1 data-i18n="heading">X3 PDF → XTC / XTCH 逐页渲染测试版</h1>
-<p class="hint" data-i18n="lead">独立测试项目：参考 XTC.js 的 PDF 逐页渲染流程。与原工具的长图按 792 行切片方式不同，每个 PDF 原始页面独立处理，适合做黑度变化对比。文件只在本机浏览器处理。</p>
-<div class="drop"><strong data-i18n="pickPdfs">选择一个或多个 PDF</strong><input id="file" type="file" accept=".pdf,application/pdf" multiple></div>
-<div class="drop"><strong data-i18n="pickFolder">选择整个文件夹</strong><p class="hint" data-i18n="folderHint">会递归读取选择文件夹中的 PDF</p><input id="folder" type="file" accept=".pdf,application/pdf" webkitdirectory directory multiple></div>
-<div class="row">
-<div class="field"><label for="depth" data-i18n="depthLabel">输出格式</label><select id="depth"><option value="2">4 灰阶 / XTCH</option><option value="1">黑白 / XTC</option></select></div>
-<div class="field"><label for="dither" data-i18n="ditherLabel">抖动算法</label><select id="dither"><option value="atkinson">Atkinson（漫画推荐）</option><option value="floyd">Floyd–Steinberg</option><option value="stucki">Stucki</option><option value="none">无抖动 / 阈值</option></select></div>
-<div class="field"><label for="threshold" data-i18n="thresholdLabel">黑白阈值（无抖动时）</label><input id="threshold" type="range" min="0" max="255" value="128"><span class="slider-value" id="thresholdValue">128</span></div>
-<div class="field"><label for="contrast" data-i18n="contrastLabel">对比度</label><select id="contrast"><option value="0">无</option><option value="1">轻度</option><option value="2" selected>中等</option><option value="3">强</option></select></div>
-<div class="field"><label for="brightness" data-i18n="brightnessLabel">亮度</label><input id="brightness" type="range" min="-80" max="80" value="0"><span class="slider-value" id="brightnessValue">0</span></div>
-<div class="field"><label for="strength" data-i18n="strengthLabel">抖动强度</label><input id="strength" type="range" min="0" max="100" step="5" value="100"><span class="slider-value" id="strengthValue">100%</span></div>
-<div class="field"><label for="mergeCount" data-i18n="mergeLabel">每几个 PDF 合并成一本</label><select id="mergeCount"><option value="1">1（单独输出）</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></div>
-<div class="field"><label for="title" data-i18n="titleLabel">自定义书名（可选）</label><input id="title" type="text" placeholder="留空则自动按文件名命名"></div>
+
+<body>
+<main class="wrap">
+
+<div class="topbar">
+  <label>
+    <span data-i18n="languageLabel">语言 / Language</span>
+    <select id="language">
+      <option value="zh">中文</option>
+      <option value="en">English</option>
+    </select>
+  </label>
 </div>
-<p class="checkline"><label><input id="chapterMode" type="checkbox"><span data-i18n="chapterMode">章节模式：将标题相同、章节号连续的 PDF 合并</span></label></p>
-<p class="hint" data-i18n="chapterHint">例如“[第1话] HEADON's Floor.pdf”和“[第2话] HEADON's Floor.pdf”会合并成“1-2 HEADON's Floor.xtch”。</p>
-<p class="hint" data-i18n="methodHint">测试流程：PDF 每一页单独渲染（scale 2.0），再缩放到 528 × 792；不会把长页面切成多个 792 像素片段。若你的 PDF 本身是一整章长图，请留意这与旧版处理逻辑不同。</p>
-</section>
+
 <section class="panel">
-<h2 data-i18n="previewTitle">前 5 页预览</h2><p class="hint" data-i18n="previewHint">选择 PDF 后显示首个 PDF 的前 5 页，调整参数可刷新当前页预览。</p>
-<div class="preview-controls"><button id="prev" class="secondary small" disabled>←</button><span id="pageLabel" class="hint">第 0 / 0 页</span><button id="next" class="secondary small" disabled>→</button></div>
-<canvas id="preview" width="528" height="792"></canvas>
+  <h1 data-i18n="heading">X3 PDF → XTC / XTCH 逐页渲染测试版</h1>
+
+  <p class="hint" data-i18n="lead">
+    PDF 页面按宽度缩放；长页面按 792 像素高度切片。文件只在本机浏览器处理。
+  </p>
+
+  <div class="drop">
+    <strong data-i18n="pickPdfs">选择一个或多个 PDF</strong>
+    <input id="file" type="file" accept=".pdf,application/pdf" multiple>
+  </div>
+
+  <div class="drop">
+    <strong data-i18n="pickFolder">选择整个文件夹</strong>
+    <p class="hint" data-i18n="folderHint">会递归读取选择文件夹中的 PDF</p>
+    <input id="folder" type="file" accept=".pdf,application/pdf" webkitdirectory directory multiple>
+  </div>
+
+  <div class="row">
+    <div class="field">
+      <label for="depth" data-i18n="depthLabel">输出格式</label>
+      <select id="depth">
+        <option value="2">4 灰阶 / XTCH</option>
+        <option value="1">黑白 / XTC</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="dither" data-i18n="ditherLabel">抖动算法</label>
+      <select id="dither">
+        <option value="atkinson">Atkinson（漫画推荐）</option>
+        <option value="floyd">Floyd–Steinberg</option>
+        <option value="stucki">Stucki</option>
+        <option value="none">无抖动 / 阈值</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="threshold" data-i18n="thresholdLabel">黑白阈值（无抖动时）</label>
+      <input id="threshold" type="range" min="0" max="255" value="128">
+      <span class="slider-value" id="thresholdValue">128</span>
+    </div>
+
+    <div class="field">
+      <label for="contrast" data-i18n="contrastLabel">对比度</label>
+      <select id="contrast">
+        <option value="0">无</option>
+        <option value="1">轻度</option>
+        <option value="2" selected>中等</option>
+        <option value="3">强</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="brightness" data-i18n="brightnessLabel">亮度</label>
+      <input id="brightness" type="range" min="-80" max="80" value="0">
+      <span class="slider-value" id="brightnessValue">0</span>
+    </div>
+
+    <div class="field">
+      <label for="strength" data-i18n="strengthLabel">抖动强度</label>
+      <input id="strength" type="range" min="0" max="100" step="5" value="100">
+      <span class="slider-value" id="strengthValue">100%</span>
+    </div>
+
+    <div class="field">
+      <label for="mergeCount" data-i18n="mergeLabel">每几个 PDF 合并成一本</label>
+      <select id="mergeCount">
+        <option value="1">1（单独输出）</option>
+        <option value="2" selected>2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="10">10</option>
+        <option value="20">20</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="title" data-i18n="titleLabel">自定义书名（可选）</label>
+      <input id="title" type="text" placeholder="留空则自动按文件名命名">
+    </div>
+  </div>
+
+  <p class="checkline">
+    <label>
+      <input id="chapterMode" type="checkbox">
+      <span data-i18n="chapterMode">章节模式：将标题相同、章节号连续的 PDF 合并</span>
+    </label>
+  </p>
+
+  <p class="hint" data-i18n="chapterHint">
+    章节模式会尝试将标题相同且章节号连续的文件合并。
+  </p>
+
+  <p class="hint" data-i18n="methodHint">
+    PDF 页面按宽度缩放到 528 像素；超过 792 像素高度的长页面会切片。
+  </p>
 </section>
+
 <section class="panel">
-<div class="section-head"><h2 data-i18n="outputsTitle">转换结果</h2><span class="hint" id="outCount">0</span></div>
-<div class="actions"><button id="go" disabled data-i18n="start">开始转换</button><button id="cancel" class="secondary" disabled data-i18n="cancel">取消</button><button id="zip" class="secondary" disabled data-i18n="zip">下载全部结果 ZIP</button><button id="clear" class="secondary" disabled data-i18n="clear">清空队列</button></div>
-<div class="progress"><div class="bar" id="bar"></div></div><div class="status" id="status">请选择 PDF 文件或文件夹。</div>
-<ul class="queue" id="outputs"><li class="hint">转换完成后显示结果。</li></ul>
-<div class="section-head"><h2 data-i18n="queueTitle">源 PDF 队列</h2><span class="hint" id="queueCount">0</span></div>
-<ul class="queue" id="queue"><li class="hint">请先选择 PDF 文件或文件夹。</li></ul>
+  <h2 data-i18n="previewTitle">前 5 个输出页面预览</h2>
+  <p class="hint" data-i18n="previewHint">
+    显示首个 PDF 产生的前 5 个输出页面；长页面会切片。
+  </p>
+
+  <div class="preview-controls">
+    <button id="prev" class="secondary small" disabled>←</button>
+    <span id="pageLabel" class="hint">第 0 / 0 页</span>
+    <button id="next" class="secondary small" disabled>→</button>
+  </div>
+
+  <canvas id="preview" width="528" height="792"></canvas>
 </section>
-<p class="footer">X3 目标尺寸：528 × 792。PDF.js 与 JSZip 通过 CDN 加载。转换完全在浏览器本地进行，不会上传 PDF。<br>
-参考流程来源：<a href="https://github.com/varo6/xtcjs" target="_blank" rel="noreferrer">varo6/xtcjs</a>（PDF 页面逐页渲染；本测试工具为独立实现，不是官方项目）。</p>
+
+<section class="panel">
+  <div class="section-head">
+    <h2 data-i18n="outputsTitle">转换结果</h2>
+    <span class="hint" id="outCount">0</span>
+  </div>
+
+  <div class="actions">
+    <button id="go" disabled data-i18n="start">开始转换</button>
+    <button id="cancel" class="secondary" disabled data-i18n="cancel">取消</button>
+    <button id="zip" class="secondary" disabled data-i18n="zip">下载全部结果 ZIP</button>
+    <button id="folderDownload" class="secondary" disabled data-i18n="folderDownload">保存到文件夹</button>
+    <button id="clear" class="secondary" disabled data-i18n="clear">清空队列</button>
+  </div>
+
+  <p class="hint" data-i18n="downloadHint">
+    可以单独下载转换结果，也可以下载 ZIP 或保存到文件夹。
+  </p>
+
+  <div class="progress">
+    <div class="bar" id="bar"></div>
+  </div>
+
+  <div class="status" id="status">请选择 PDF 文件或文件夹。</div>
+
+  <ul class="queue" id="outputs">
+    <li class="hint">转换完成后显示结果。</li>
+  </ul>
+
+  <div class="section-head">
+    <h2 data-i18n="queueTitle">源 PDF 队列</h2>
+    <span class="hint" id="queueCount">0</span>
+  </div>
+
+  <p class="hint" data-i18n="queueHint">
+    可调整文件顺序，也可以删除不需要转换的文件。
+  </p>
+
+  <ul class="queue" id="queue">
+    <li class="hint">请先选择 PDF 文件或文件夹。</li>
+  </ul>
+</section>
+
+<p class="footer">
+  X3 目标尺寸：528 × 792。PDF.js 与 JSZip 通过 CDN 加载。转换在浏览器本地进行。
+  <br>
+  参考：
+  <a href="https://github.com/varo6/xtcjs" target="_blank" rel="noreferrer">varo6/xtcjs</a>
+</p>
+
 </main>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script type="module" src="./app.js"></script>
-</body></html>
+
+</body>
+</html>
