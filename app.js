@@ -1,5 +1,5 @@
-import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.54/pdf.min.mjs';
-pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.54/pdf.worker.min.mjs';
+import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
 const W=528,H=792,$=id=>document.getElementById(id);
 const dict={
 zh:{heading:'X3 PDF → XTC / XTCH 逐页渲染测试版',lead:'独立测试项目：参考 XTC.js 的 PDF 逐页渲染流程。与原工具的长图按 792 行切片方式不同，每个 PDF 原始页面独立处理，适合做黑度变化对比。文件只在本机浏览器处理。',pickPdfs:'选择一个或多个 PDF',pickFolder:'选择整个文件夹',folderHint:'会递归读取选择文件夹中的 PDF',depthLabel:'输出格式',ditherLabel:'抖动算法',thresholdLabel:'黑白阈值（无抖动时）',contrastLabel:'对比度',brightnessLabel:'亮度',strengthLabel:'抖动强度',mergeLabel:'每几个 PDF 合并成一本',titleLabel:'自定义书名（可选）',chapterMode:'章节模式：将标题相同、章节号连续的 PDF 合并',chapterHint:'例如“[第1话] HEADON\\'s Floor.pdf”和“[第2话] HEADON\\'s Floor.pdf”会合并成“1-2 HEADON\\'s Floor.xtch”。',methodHint:'测试流程：PDF 每一页单独渲染（scale 2.0），再缩放到 528 × 792；不会把长页面切成多个 792 像素片段。若你的 PDF 本身是一整章长图，请留意这与旧版处理逻辑不同。',previewTitle:'前 5 页预览',previewHint:'选择 PDF 后显示首个 PDF 的前 5 页，调整参数可刷新当前页预览。',outputsTitle:'转换结果',start:'开始转换',cancel:'取消',zip:'下载全部结果 ZIP',clear:'清空队列',queueTitle:'源 PDF 队列',languageLabel:'语言 / Language'},
