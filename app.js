@@ -32,8 +32,8 @@
 
   const dict = {
     zh: {
-      heading: 'X3 PDF → XTC / XTCH 逐页渲染测试版',
-      lead: '独立测试项目：参考 XTC.js 的 PDF 逐页渲染流程。PDF 页面按宽度缩放；长页面按 792 像素高度切片。文件只在本机浏览器处理。',
+      heading: 'X3 PDF → XTC / XTCH 连续拼接测试版',
+      lead: '独立测试项目：PDF 页面按宽度缩放后连续拼接，重叠率为 0%，每累计 792 像素输出一页；最后不足 792 像素的内容放在页面顶部，底部补白。文件只在本机浏览器处理。',
       pickPdfs: '选择一个或多个 PDF',
       pickFolder: '选择整个文件夹',
       folderHint: '会递归读取选择文件夹中的 PDF',
@@ -47,9 +47,9 @@
       titleLabel: '自定义书名（可选）',
       chapterMode: '章节模式：将标题相同、章节号连续的 PDF 合并',
       chapterHint: '例如“[第1话] HEADON\'s Floor.pdf”和“[第2话] HEADON\'s Floor.pdf”会合并成“1-2 HEADON\'s Floor.xtch”。',
-      methodHint: '处理方式：PDF 页面按宽度缩放到 528 像素；超过 792 像素的长页面会按 792 像素高度切片。预览和正式转换使用相同的切片逻辑。',
+      methodHint: '处理方式：PDF 页面按比例缩放到 528 像素宽后连续拼接；每 792 像素切成一页，不重叠。最后不足 792 像素的内容置顶，底部补白。预览和正式转换使用相同的拼接逻辑。',
       previewTitle: '前 5 个输出页面预览',
-      previewHint: '显示首个 PDF 产生的前 5 个输出页面；长页面会切片。调整参数可刷新当前页预览。',
+      previewHint: '显示首个 PDF 连续拼接后产生的前 5 个输出页面。页面之间不留额外间隔、不重叠；调整参数可刷新当前页预览。',
       downloadModeTitle: '下载方式（转换前选择）',
       downloadModeLabel: '选择转换完成后的保存方式',
       individualMode: '单独下载',
@@ -110,8 +110,8 @@
       saveFailed: '文件转换成功，但保存失败：'
     },
     en: {
-      heading: 'X3 PDF → XTC / XTCH — Per-page rendering test',
-      lead: 'Independent test project inspired by the PDF rendering flow in XTC.js. PDF pages are scaled by width; tall pages are sliced into 792-pixel-high segments. Files stay in your browser.',
+      heading: 'X3 PDF → XTC / XTCH — Continuous stitching test',
+      lead: 'Independent test project. PDF pages are scaled to 528 pixels wide and stitched continuously with 0% overlap. One output page is emitted for every 792 rows; the final partial page is top-aligned and padded white at the bottom. Files stay in your browser.',
       pickPdfs: 'Select one or more PDFs',
       pickFolder: 'Select a folder',
       folderHint: 'PDFs inside the selected folder are detected recursively',
@@ -125,9 +125,9 @@
       titleLabel: 'Custom book title (optional)',
       chapterMode: 'Chapter mode: merge consecutive chapters with matching titles',
       chapterHint: 'For example, “[Chapter 1] HEADON\'s Floor.pdf” and “[Chapter 2] HEADON\'s Floor.pdf” merge into “1-2 HEADON\'s Floor.xtch”.',
-      methodHint: 'Scale PDF pages to 528 pixels wide. Pages taller than 792 pixels are sliced into 792-pixel-high output pages. Preview and conversion use the same slicing logic.',
+      methodHint: 'Scale each PDF page proportionally to 528 pixels wide, then stitch pages continuously with 0% overlap. Emit one output page per 792 rows; top-align and white-pad the final partial page. Preview and conversion use the same stitching logic.',
       previewTitle: 'First 5 output pages preview',
-      previewHint: 'Shows the first five output pages from the first PDF; tall pages are sliced. Adjust settings to refresh the current page.',
+      previewHint: 'Shows the first five output pages after continuously stitching the first PDF. No extra gaps or overlap are added between source pages. Adjust settings to refresh the preview.',
       downloadModeTitle: 'Download method (choose before conversion)',
       downloadModeLabel: 'Choose how to save the converted files',
       individualMode: 'Download individually',
@@ -939,75 +939,140 @@
     return output;
   }
 
-  function drawSourceToTargetPages(sourceCanvas) {
-    if (!sourceCanvas.width || !sourceCanvas.height) {
-      throw Error('源页面尺寸无效。');
+  // Continuously stitch scaled PDF pages into 528 × 792 output pages.
+  // Overlap is fixed at 0%; only the final partial page is white-padded.
+  function createStitcher() {
+    function newWhitePage() {
+      const page = new Uint8Array(W * H);
+      page.fill(255);
+      return page;
     }
 
-    const scale = W / sourceCanvas.width;
-    const scaledHeight = Math.max(
-      1,
-      Math.ceil(sourceCanvas.height * scale)
-    );
-    const count = Math.ceil(scaledHeight / H);
-    const pages = [];
+    let buffer = newWhitePage();
+    let usedRows = 0;
 
-    for (let number = 0; number < count; number++) {
-      const canvas = document.createElement('canvas');
-      canvas.width = W;
-      canvas.height = H;
+    function appendCanvas(sourceCanvas, onPage, maxPages = Infinity) {
+      if (!sourceCanvas.width || !sourceCanvas.height) {
+        throw Error('源页面尺寸无效。');
+      }
 
-      const context = canvas.getContext('2d', {
+      if (typeof onPage !== 'function') {
+        throw Error('拼接输出回调无效。');
+      }
+
+      const scaleX = W / sourceCanvas.width;
+      const scaledHeight = Math.max(
+        1,
+        Math.ceil(sourceCanvas.height * scaleX)
+      );
+      // Use the rounded target height as the global vertical scale so adjacent
+      // tiles map to the same row coordinates without gaps.
+      const scaleY = scaledHeight / sourceCanvas.height;
+
+      // A two-row bleed above and below each tile avoids visible seams caused
+      // by interpolation at crop boundaries. Memory remains bounded (~794 rows).
+      const temp = document.createElement('canvas');
+      temp.width = W;
+      temp.height = H + 2;
+
+      const context = temp.getContext('2d', {
         willReadFrequently: true
       });
 
       if (!context) {
-        throw Error('无法创建目标画布上下文。');
+        temp.width = 1;
+        temp.height = 1;
+        throw Error('无法创建拼接画布上下文。');
       }
 
-      context.fillStyle = '#fff';
-      context.fillRect(0, 0, W, H);
+      let sourceRow = 0;
+      let emitted = 0;
 
-      const start = number * H;
-      const drawHeight = Math.min(H, scaledHeight - start);
-      const sourceY = start / scale;
-      const sourceHeight = Math.min(
-        sourceCanvas.height - sourceY,
-        drawHeight / scale
-      );
+      try {
+        while (sourceRow < scaledHeight && emitted < maxPages) {
+          const rows = Math.min(
+            H,
+            scaledHeight - sourceRow,
+            H - usedRows
+          );
 
-      if (sourceHeight > 0 && drawHeight > 0) {
-        const destY = count === 1
-          ? Math.floor((H - scaledHeight) / 2)
-          : 0;
+          if (rows <= 0) {
+            throw Error('拼接过程遇到无效的行数。');
+          }
 
-        context.drawImage(
-          sourceCanvas,
-          0, sourceY,
-          sourceCanvas.width, sourceHeight,
-          0, destY,
-          W, sourceHeight * scale
-        );
+          // Include one output row of bleed on each side where available.
+          const tileStart = Math.max(0, sourceRow - 1);
+          const tileEnd = Math.min(scaledHeight, sourceRow + rows + 1);
+          const tileRows = tileEnd - tileStart;
+          const tileOrigin = sourceRow - 1;
+          const destY = tileStart - tileOrigin;
+          const sourceY = tileStart / scaleY;
+          const sourceHeight = (tileEnd - tileStart) / scaleY;
+
+          context.fillStyle = '#fff';
+          context.fillRect(0, 0, W, temp.height);
+          context.drawImage(
+            sourceCanvas,
+            0, sourceY,
+            sourceCanvas.width, sourceHeight,
+            0, destY,
+            W, tileRows
+          );
+
+          // The requested source rows begin one row into the temporary tile.
+          const rgba = context.getImageData(0, 1, W, rows).data;
+
+          for (let y = 0; y < rows; y++) {
+            const sourceOffset = y * W * 4;
+            const targetOffset = (usedRows + y) * W;
+
+            for (let x = 0; x < W; x++) {
+              const pixel = sourceOffset + x * 4;
+              buffer[targetOffset + x] = Math.round(
+                0.299 * rgba[pixel] +
+                0.587 * rgba[pixel + 1] +
+                0.114 * rgba[pixel + 2]
+              );
+            }
+          }
+
+          sourceRow += rows;
+          usedRows += rows;
+
+          if (usedRows === H) {
+            const completePage = buffer;
+            buffer = newWhitePage();
+            usedRows = 0;
+            emitted++;
+            onPage(completePage);
+          }
+        }
+      } finally {
+        temp.width = 1;
+        temp.height = 1;
       }
 
-      const imageData = context.getImageData(0, 0, W, H);
-      const gray = new Uint8Array(W * H);
-
-      for (let i = 0, j = 0; i < gray.length; i++, j += 4) {
-        gray[i] = Math.round(
-          0.299 * imageData.data[j] +
-          0.587 * imageData.data[j + 1] +
-          0.114 * imageData.data[j + 2]
-        );
-      }
-
-      pages.push(gray);
-
-      canvas.width = 1;
-      canvas.height = 1;
+      return {
+        pagesEmitted: emitted,
+        remainingRows: sourceRow < scaledHeight
+      };
     }
 
-    return pages;
+    function finish(onPage) {
+      if (usedRows === 0) return false;
+      if (typeof onPage !== 'function') {
+        throw Error('拼接输出回调无效。');
+      }
+
+      // The buffer was initialized white, so remaining rows are padded at bottom.
+      const lastPage = buffer;
+      buffer = newWhitePage();
+      usedRows = 0;
+      onPage(lastPage);
+      return true;
+    }
+
+    return { appendCanvas, finish };
   }
 
   function settings() {
@@ -1077,7 +1142,7 @@
         previewIndex = 0;
 
         if (previewPdf) {
-          previewPdf.destroy();
+          await previewPdf.destroy();
           previewPdf = null;
         }
 
@@ -1089,20 +1154,21 @@
       if (!pdfjsLib) {
         throw Error(
           tr('pdfjsFailed') +
-          (pdfjsLoadError?.message ? ' ' + pdfjsLoadError.message : '')
+          (pdfjsLoadError?.message
+            ? ' ' + pdfjsLoadError.message
+            : '')
         );
       }
 
       const key = fileKey(file);
 
-      // Reuse the loaded preview only when it is complete.
       if (key !== previewKey || !previewPages.length) {
-        const loadingTask = pdfjsLib.getDocument({
+        const task = pdfjsLib.getDocument({
           data: await file.arrayBuffer()
         });
-
-        const newPdf = await loadingTask.promise;
+        const newPdf = await task.promise;
         const newPages = [];
+        const stitcher = createStitcher();
 
         try {
           for (
@@ -1118,7 +1184,6 @@
             const page = await newPdf.getPage(number);
             const viewport = page.getViewport({ scale: 2 });
             const canvas = document.createElement('canvas');
-
             canvas.width = Math.ceil(viewport.width);
             canvas.height = Math.ceil(viewport.height);
 
@@ -1129,6 +1194,9 @@
             if (!context) {
               throw Error('无法创建预览画布上下文。');
             }
+
+            context.fillStyle = '#fff';
+            context.fillRect(0, 0, canvas.width, canvas.height);
 
             await page.render({
               canvasContext: context,
@@ -1143,16 +1211,21 @@
               return;
             }
 
-            const sliced = drawSourceToTargetPages(canvas);
-
-            newPages.push(
-              ...sliced.slice(0, 5 - newPages.length)
+            const result = stitcher.appendCanvas(
+              canvas,
+              gray => newPages.push(gray),
+              5 - newPages.length
             );
 
             page.cleanup?.();
-
             canvas.width = 1;
             canvas.height = 1;
+
+            if (result.remainingRows) break;
+          }
+
+          if (newPages.length < 5) {
+            stitcher.finish(gray => newPages.push(gray));
           }
 
           if (requestId !== previewRequestId) {
@@ -1165,7 +1238,7 @@
           }
 
           previewPdf = newPdf;
-          previewPages = newPages;
+          previewPages = newPages.slice(0, 5);
           previewIndex = 0;
           previewKey = key;
         } catch (error) {
@@ -1194,7 +1267,11 @@
       if (requestId !== previewRequestId) return;
 
       console.error('Preview failed:', error);
-      status(tr('previewFailed') + (error.message || String(error)), 0);
+      status(
+        tr('previewFailed') +
+        (error.message || String(error)),
+        0
+      );
       updatePageLabel();
     }
   }
@@ -1251,13 +1328,47 @@
     if (!pdfjsLib) {
       throw Error(
         tr('pdfjsFailed') +
-        (pdfjsLoadError?.message ? ' ' + pdfjsLoadError.message : '')
+        (pdfjsLoadError?.message
+          ? ' ' + pdfjsLoadError.message
+          : '')
       );
     }
 
     const current = settings();
     const pages = [];
     let pageTotal = 0;
+    // Keep one continuous buffer across all PDF pages in this output book.
+    const stitcher = createStitcher();
+
+    function addOutputGray(gray) {
+      const processed = processGray(
+        gray,
+        current.mode,
+        current.depth,
+        current.threshold,
+        current.contrast,
+        current.brightness,
+        current.strength
+      );
+      pages.push(packPage(processed, current.depth));
+      pageTotal++;
+    }
+
+    function updateProgress(file, fileIndex, pageNumber, pdfPageCount) {
+      status(
+        `${tr('convertingGroup')} ${groupIndex + 1}/${total} · ` +
+        `${file.name} · ` +
+        `${tr('pdfPage')} ${pageNumber}/${pdfPageCount} · ` +
+        `${tr('x3Page')} ${pageTotal}`,
+        (
+          (
+            groupIndex +
+            ((fileIndex + 1) / group.length) *
+            pageNumber / pdfPageCount
+          ) / total
+        ) * 100
+      );
+    }
 
     for (let fileIndex = 0; fileIndex < group.length; fileIndex++) {
       if (cancelled) throw Error('Cancelled');
@@ -1277,7 +1388,6 @@
           const page = await pdf.getPage(pageNumber);
           const viewport = page.getViewport({ scale: 2 });
           const canvas = document.createElement('canvas');
-
           canvas.width = Math.ceil(viewport.width);
           canvas.height = Math.ceil(viewport.height);
 
@@ -1298,44 +1408,19 @@
             background: 'rgb(255,255,255)'
           }).promise;
 
-          const grayPages = drawSourceToTargetPages(canvas);
-
-          for (const gray of grayPages) {
+          stitcher.appendCanvas(canvas, gray => {
             if (cancelled) throw Error('Cancelled');
-
-            const processed = processGray(
-              gray,
-              current.mode,
-              current.depth,
-              current.threshold,
-              current.contrast,
-              current.brightness,
-              current.strength
-            );
-
-            pages.push(packPage(processed, current.depth));
-            pageTotal++;
-
-            status(
-              `${tr('convertingGroup')} ${groupIndex + 1}/${total} · ` +
-              `${item.file.name} · ` +
-              `${tr('pdfPage')} ${pageNumber}/${pdf.numPages} · ` +
-              `${tr('x3Page')} ${pageTotal}`,
-              (
-                (
-                  groupIndex +
-                  ((fileIndex + 1) / group.length) *
-                  pageNumber / pdf.numPages
-                ) / total
-              ) * 100
-            );
-
-            await new Promise(resolve => setTimeout(resolve, 0));
-          }
+            addOutputGray(gray);
+            updateProgress(item.file, fileIndex, pageNumber, pdf.numPages);
+          });
 
           page.cleanup?.();
           canvas.width = 1;
           canvas.height = 1;
+
+          // Update progress even when this source page did not complete an X3 page.
+          updateProgress(item.file, fileIndex, pageNumber, pdf.numPages);
+          await new Promise(resolve => setTimeout(resolve, 0));
         }
       } finally {
         await pdf.destroy();
@@ -1345,11 +1430,20 @@
       renderQueue();
     }
 
+    // Emit the final incomplete page only once, with white padding at the bottom.
+    stitcher.finish(gray => addOutputGray(gray));
+
     const name = outputName(group, groupIndex);
     const data = buildBook(
       pages,
       current.depth === 2,
       name.replace(/\.(xtc|xtch)$/i, '')
+    );
+
+    status(
+      `${tr('convertingGroup')} ${groupIndex + 1}/${total} · ` +
+      `${tr('x3Page')} ${pageTotal}`,
+      ((groupIndex + 1) / total) * 100
     );
 
     return {

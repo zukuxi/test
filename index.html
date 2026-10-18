@@ -201,10 +201,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 </div>
 
 <section class="panel">
-  <h1 data-i18n="heading">X3 PDF → XTC / XTCH 逐页渲染测试版</h1>
+  <h1 data-i18n="heading">X3 PDF → XTC / XTCH 连续拼接测试版</h1>
 
   <p class="hint" data-i18n="lead">
-    PDF 页面按宽度缩放；长页面按 792 像素高度切片。文件只在本机浏览器处理。
+    PDF 页面按比例缩放到 528 像素宽后连续拼接，不重叠；每累计 792 像素输出一页，最后不足部分在底部补白。文件只在本机浏览器处理。
   </p>
 
   <div class="drop">
@@ -296,14 +296,14 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   </p>
 
   <p class="hint" data-i18n="methodHint">
-    PDF 页面按宽度缩放到 528 像素；超过 792 像素高度的长页面会切片。
+    PDF 页面按比例缩放到 528 像素宽后连续拼接；每 792 像素输出一页，不重叠。最后不足 792 像素的内容置顶，底部补白。预览和正式转换使用相同的拼接逻辑。
   </p>
 </section>
 
 <section class="panel">
   <h2 data-i18n="previewTitle">前 5 个输出页面预览</h2>
   <p class="hint" data-i18n="previewHint">
-    显示首个 PDF 产生的前 5 个输出页面；长页面会切片。
+    显示首个 PDF 连续拼接后产生的前 5 个输出页面。页面之间不留额外间隔、不重叠。
   </p>
 
   <div class="preview-controls">
