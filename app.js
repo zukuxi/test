@@ -50,15 +50,10 @@
       methodHint: '处理方式：PDF 页面按比例缩放到 528 像素宽后连续拼接；每 792 像素切成一页，不重叠。最后不足 792 像素的内容置顶，底部补白。预览和正式转换使用相同的拼接逻辑。',
       previewTitle: '前 5 个输出页面预览',
       previewHint: '显示首个 PDF 连续拼接后产生的前 5 个输出页面。页面之间不留额外间隔、不重叠；调整参数可刷新当前页预览。',
-      downloadModeTitle: '下载方式（转换前选择）',
-      downloadModeLabel: '选择转换完成后的保存方式',
+      downloadModeLabel: '下载方式',
       individualMode: '单独下载',
-      individualModeHint: '转换完成后，在结果列表逐本下载。',
       zipMode: '打包 ZIP',
-      zipModeHint: '转换完成后，将所有结果打包成一个 ZIP。',
-      folderMode: '自动保存到文件夹',
-      folderModeHint: '先选择目标文件夹，每本完成后自动保存。',
-      chooseFolder: '选择保存文件夹',
+      folderMode: '自动保存到文件夹（开始转换时选择）',
       folderNotChosen: '尚未选择保存文件夹。',
       folderChosen: '已选择保存文件夹：',
       outputsTitle: '转换结果',
@@ -128,15 +123,10 @@
       methodHint: 'Scale each PDF page proportionally to 528 pixels wide, then stitch pages continuously with 0% overlap. Emit one output page per 792 rows; top-align and white-pad the final partial page. Preview and conversion use the same stitching logic.',
       previewTitle: 'First 5 output pages preview',
       previewHint: 'Shows the first five output pages after continuously stitching the first PDF. No extra gaps or overlap are added between source pages. Adjust settings to refresh the preview.',
-      downloadModeTitle: 'Download method (choose before conversion)',
-      downloadModeLabel: 'Choose how to save the converted files',
+      downloadModeLabel: 'Download method',
       individualMode: 'Download individually',
-      individualModeHint: 'Download each book separately from the results list.',
       zipMode: 'Create a ZIP',
-      zipModeHint: 'Package all results into one ZIP after conversion.',
-      folderMode: 'Automatically save to a folder',
-      folderModeHint: 'Choose a destination folder first. Each book is saved as soon as it is ready.',
-      chooseFolder: 'Choose destination folder',
+      folderMode: 'Auto-save to folder (choose when starting)',
       folderNotChosen: 'No destination folder selected.',
       folderChosen: 'Destination folder selected: ',
       outputsTitle: 'Output files',
@@ -243,9 +233,7 @@
   $('language').addEventListener('change', applyLang);
 
   function selectedDownloadMode() {
-    return document.querySelector(
-      'input[name="downloadMode"]:checked'
-    )?.value || 'individual';
+    return $('downloadMode').value || 'individual';
   }
 
   function updateFolderStatus() {
@@ -439,10 +427,6 @@
     $('cancel').disabled = !running;
     $('zip').disabled = running || savingFolder || !outputs.length;
 
-    const chooseFolderButton = $('chooseFolder');
-    if (chooseFolderButton) {
-      chooseFolderButton.disabled = running || savingFolder;
-    }
   }
 
   function renderOutputs() {
@@ -1110,7 +1094,7 @@
     }
 
     context.putImageData(imageData, 0, 0);
-canvas.classList.add('has-preview');
+    canvas.classList.add('has-preview');
   }
 
   function clearPreviewCanvas() {
@@ -1118,7 +1102,7 @@ canvas.classList.add('has-preview');
     const context = canvas.getContext('2d');
 
     context.clearRect(0, 0, canvas.width, canvas.height);
-canvas.classList.remove('has-preview');
+    canvas.classList.remove('has-preview');
   }
 
   function updatePageLabel() {
@@ -1566,9 +1550,6 @@ canvas.classList.remove('has-preview');
       return false;
     }
   }
-
-  $('chooseFolder').addEventListener('click', chooseOutputFolder);
-
   async function createAndDownloadZip() {
     if (!window.JSZip) {
       throw Error(
@@ -1808,15 +1789,6 @@ canvas.classList.remove('has-preview');
       status(tr('autoZipFailed') + error.message, 0);
     }
   };
-
-  // Folder selection is only required when folder mode is selected.
-  document.querySelectorAll('input[name="downloadMode"]').forEach(input => {
-    input.addEventListener('change', () => {
-      if (selectedDownloadMode() === 'folder' && !outputDirectoryHandle) {
-        status(tr('needFolder'), 0);
-      }
-    });
-  });
 
   // Initialise labels and controls.
   renderQueue();

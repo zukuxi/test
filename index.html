@@ -135,7 +135,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   background: #fff;
   margin: auto;
 }
-
 #preview.has-preview {
   display: block;
 }
@@ -179,7 +178,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   font-weight: 400;
   margin-top: 3px;
 }
-#folderStatus { margin-top: 8px; }
 @media(max-width:560px) {
   .wrap { padding: 10px; }
   .panel { padding: 12px; }
@@ -283,6 +281,15 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     </div>
 
     <div class="field">
+      <label for="downloadMode" data-i18n="downloadModeLabel">下载方式</label>
+      <select id="downloadMode">
+        <option value="individual" selected data-i18n="individualMode">单独下载</option>
+        <option value="zip" data-i18n="zipMode">打包 ZIP</option>
+        <option value="folder" data-i18n="folderMode">自动保存到文件夹（开始转换时选择）</option>
+      </select>
+    </div>
+
+    <div class="field">
       <label for="title" data-i18n="titleLabel">自定义书名（可选）</label>
       <input id="title" type="text" placeholder="留空则自动按文件名命名">
     </div>
@@ -320,48 +327,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 </section>
 
 <section class="panel">
-  <h2 data-i18n="downloadModeTitle">下载方式（转换前选择）</h2>
-
-  <div class="download-options">
-    <strong data-i18n="downloadModeLabel">选择转换完成后的保存方式</strong>
-
-    <div class="download-modes">
-      <label class="download-mode">
-        <input type="radio" name="downloadMode" value="individual" checked>
-        <span>
-          <b data-i18n="individualMode">单独下载</b>
-          <small data-i18n="individualModeHint">转换完成后，在结果列表逐本下载。</small>
-        </span>
-      </label>
-
-      <label class="download-mode">
-        <input type="radio" name="downloadMode" value="zip">
-        <span>
-          <b data-i18n="zipMode">打包 ZIP</b>
-          <small data-i18n="zipModeHint">转换完成后，将所有结果打包成一个 ZIP。</small>
-        </span>
-      </label>
-
-      <label class="download-mode">
-        <input type="radio" name="downloadMode" value="folder">
-        <span>
-          <b data-i18n="folderMode">自动保存到文件夹</b>
-          <small data-i18n="folderModeHint">先选择目标文件夹，每本完成后自动保存。</small>
-        </span>
-      </label>
-    </div>
-
-    <div class="actions">
-      <button id="chooseFolder" class="secondary" type="button" data-i18n="chooseFolder">
-        选择保存文件夹
-      </button>
-    </div>
-
-    <div id="folderStatus" class="hint" data-i18n="folderNotChosen">
-      尚未选择保存文件夹。
-    </div>
-  </div>
-
   <div class="section-head">
     <h2 data-i18n="outputsTitle">转换结果</h2>
     <span class="hint" id="outCount">0</span>
