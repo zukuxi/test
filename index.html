@@ -126,14 +126,18 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   margin: 8px 0;
 }
 #preview {
-  display: block;
+  display: none;
   max-width: 100%;
-  width: min(528px, 100%);
+  width: 264px;
   height: auto;
   image-rendering: pixelated;
   border: 1px solid #414b5d;
   background: #fff;
   margin: auto;
+}
+
+#preview.has-preview {
+  display: block;
 }
 .slider-value { color: var(--muted); font-size: .88rem; }
 .checkline { margin: 10px 0; }
