@@ -1,7 +1,8 @@
 # X3 PDF → XTC / XTCH 连续拼接测试版
 
 这是一个独立的 GitHub Pages 静态网页项目，用于测试 PDF 页面连续拼接后生成 XTC / XTCH 的效果。它不会修改其他仓库或工具。
-https://github.com/zukuxi/test
+
+https://zukuxi.github.io/test/
 
 ## 转换方式
 
