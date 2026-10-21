@@ -1,6 +1,7 @@
 # X3 PDF → XTC / XTCH 连续拼接测试版
 
 这是一个独立的 GitHub Pages 静态网页项目，用于测试 PDF 页面连续拼接后生成 XTC / XTCH 的效果。它不会修改其他仓库或工具。
+https://github.com/zukuxi/test
 
 ## 转换方式
 
@@ -14,13 +15,6 @@
 - 支持 XTC（黑白）和 XTCH（4 灰阶）、Atkinson / Floyd–Steinberg / Stucki 抖动、亮度、对比度、阈值、抖动强度、前 5 页预览、中英文界面、单独下载、ZIP 下载及支持的浏览器中的文件夹保存。
 - PDF 在浏览器本地处理，不会上传到服务器。
 
-## 部署
-
-1. 解压 ZIP。
-2. 在 GitHub 新建一个**独立**仓库。
-3. 上传 `index.html`、`app.js`、`README.md`。
-4. 仓库 Settings → Pages → Deploy from a branch → `main` / `root`。
-5. 等待 GitHub Pages 发布后打开网址测试。
 
 ## 测试建议
 
