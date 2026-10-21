@@ -1110,6 +1110,7 @@
     }
 
     context.putImageData(imageData, 0, 0);
+canvas.classList.add('has-preview');
   }
 
   function clearPreviewCanvas() {
@@ -1117,6 +1118,7 @@
     const context = canvas.getContext('2d');
 
     context.clearRect(0, 0, canvas.width, canvas.height);
+canvas.classList.remove('has-preview');
   }
 
   function updatePageLabel() {
